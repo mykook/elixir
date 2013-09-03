@@ -68,42 +68,42 @@ defmodule ExUnit.Formatter do
     end
   end
 
-  @doc %B"""
+  @doc %S"""
   Receives a test and formats its failure.
   """
-  def format_test_failure(ExUnit.Test[] = test, counter, cwd, color) do
+  def format_test_failure(ExUnit.Test[] = test, counter, color) do
     ExUnit.Test[case: test_case, name: test, failure: { kind, reason, stacktrace }] = test
 
     test_info("#{counter}) #{test} (#{inspect test_case})", color) <>
       format_kind_reason(kind, reason, color) <>
-      format_stacktrace(stacktrace, test_case, test, cwd, color)
+      format_stacktrace(stacktrace, test_case, test, color)
   end
 
   @doc """
   Receives a test case and formats its failure.
   """
-  def format_test_case_failure(ExUnit.TestCase[] = test_case, counter, cwd, color) do
+  def format_test_case_failure(ExUnit.TestCase[] = test_case, counter, color) do
     ExUnit.TestCase[name: test_case, failure: { kind, reason, stacktrace }] = test_case
 
     test_case_info("#{counter}) #{inspect test_case}: ", color) <>
       format_kind_reason(kind, reason, color) <>
-      format_stacktrace(stacktrace, test_case, nil, cwd, color)
+      format_stacktrace(stacktrace, test_case, nil, color)
   end
 
   defp format_kind_reason(:error, ExUnit.ExpectationError[] = record, color) do
-    prelude  = String.downcase record.prelude
-    reason   = record.full_reason
-    max      = max(size(prelude), size(reason))
+    prelude   = String.downcase record.prelude
+    assertion = record.full_assertion
+    max       = max(size(prelude), size(assertion))
 
     error_info("** (ExUnit.ExpectationError)", color) <>
-      if desc = record.description do
+      if desc = record.expr do
         max = max(max, size("instead got"))
         error_info("  #{pad(prelude, max)}: #{maybe_multiline(desc, max)}", color) <>
-        error_info("  #{pad(reason, max)}: #{maybe_multiline(record.expected, max)}", color) <>
+        error_info("  #{pad(assertion, max)}: #{maybe_multiline(record.expected, max)}", color) <>
         error_info("  #{pad("instead got", max)}: #{maybe_multiline(record.actual, max)}", color)
       else
         error_info("  #{pad(prelude, max)}: #{maybe_multiline(record.expected, max)}", color) <>
-        error_info("  #{pad(reason, max)}: #{maybe_multiline(record.actual, max)}", color)
+        error_info("  #{pad(assertion, max)}: #{maybe_multiline(record.actual, max)}", color)
       end
   end
 
@@ -115,11 +115,12 @@ defmodule ExUnit.Formatter do
     error_info "** (#{kind}) #{inspect(reason)}", color
   end
 
-  defp format_stacktrace([{ test_case, test, _, [ file: file, line: line ] }|_], test_case, test, cwd, color) do
-    location_info("at #{Path.relative_to(file, cwd)}:#{line}", color)
+  defp format_stacktrace([{ test_case, test, _, [ file: file, line: line ] }|_], test_case, test, color) do
+    location_info("at #{Path.relative_to_cwd(file)}:#{line}", color)
   end
 
-  defp format_stacktrace(stacktrace, _case, _test, cwd, color) do
+  defp format_stacktrace(stacktrace, _case, _test, color) do
+    cwd = System.cwd
     location_info("stacktrace:", color) <>
       Enum.map_join(stacktrace, fn(s) -> stacktrace_info format_stacktrace_entry(s, cwd), color end)
   end

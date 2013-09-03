@@ -4,9 +4,8 @@
 -export([translate/2]).
 -import(elixir_translator, [translate_each/2, translate_args/2, translate_apply/7]).
 -import(elixir_scope, [umergec/2, umergea/2]).
--import(elixir_errors, [compile_error/3, compile_error/4,
-  syntax_error/3, syntax_error/4, assert_no_function_scope/3,
-  assert_module_scope/3, assert_no_match_or_guard_scope/3]).
+-import(elixir_errors, [compile_error/3, syntax_error/3, syntax_error/4,
+  assert_no_function_scope/3, assert_module_scope/3, assert_no_match_or_guard_scope/3]).
 
 -include("elixir.hrl").
 -define(opt_in_types(Kind), Kind == atom orelse Kind == integer orelse Kind == float).
@@ -34,11 +33,11 @@ translate({ Op, Meta, Exprs }, S) when is_list(Exprs),
 
 translate({ '!', Meta, [{ '!', _, [Expr] }] }, S) ->
   { TExpr, SE } = translate_each(Expr, S),
-  elixir_tree_helpers:convert_to_boolean(?line(Meta), TExpr, true, S#elixir_scope.context == guard, SE);
+  elixir_utils:convert_to_boolean(?line(Meta), TExpr, true, S#elixir_scope.context == guard, SE);
 
 translate({ '!', Meta, [Expr] }, S) ->
   { TExpr, SE } = translate_each(Expr, S),
-  elixir_tree_helpers:convert_to_boolean(?line(Meta), TExpr, false, S#elixir_scope.context == guard, SE);
+  elixir_utils:convert_to_boolean(?line(Meta), TExpr, false, S#elixir_scope.context == guard, SE);
 
 translate({ in, Meta, [Left, Right] }, #elixir_scope{extra_guards=nil} = S) ->
   { _, TExpr, TS } = translate_in(Meta, Left, Right, S),
@@ -47,52 +46,6 @@ translate({ in, Meta, [Left, Right] }, #elixir_scope{extra_guards=nil} = S) ->
 translate({ in, Meta, [Left, Right] }, #elixir_scope{extra_guards=Extra} = S) ->
   { TVar, TExpr, TS } = translate_in(Meta, Left, Right, S),
   { TVar, TS#elixir_scope{extra_guards=[TExpr|Extra]} };
-
-%% Functions
-%% Once this function is removed, the related checks from quote needs to be removed too.
-%% We also need to remove it from the Kernel in erlang list.
-
-translate({ function, Meta, [[{do,{ '->',_,Pairs}}]] }, S) ->
-  elixir_errors:deprecation(Meta, S#elixir_scope.file, "function do ... end is deprecated, please use fn ... end instead"),
-  assert_no_match_or_guard_scope(Meta, 'function', S),
-  elixir_fn:fn(Meta, Pairs, S);
-
-translate({ function, _, [{ '/', _, [{{ '.', Meta, [M, F] }, _ , []}, A]}] }, S) when is_atom(F), is_integer(A) ->
-  elixir_errors:deprecation(Meta, S#elixir_scope.file, "function(Mod.fun/a) is deprecated, please use &Mod.fun/a instead"),
-  assert_no_match_or_guard_scope(Meta, 'function', S),
-  { [A0,B0,C0], SA } = translate_args([M, F, A], S),
-  { { 'fun', ?line(Meta), { function, A0, B0, C0 } }, SA };
-
-translate({ function, MetaFA, [{ '/', _, [{F, Meta, C}, A]}] }, S) when is_atom(F), is_integer(A), is_atom(C) ->
-  elixir_errors:deprecation(Meta, S#elixir_scope.file, "function(fun/a) is deprecated, please use &fun/a instead"),
-  assert_no_match_or_guard_scope(Meta, 'function', S),
-
-  WrappedMeta =
-    case lists:keyfind(import_fa, 1, MetaFA) of
-      { import_fa, { Receiver, Context } } ->
-        lists:keystore(context, 1,
-          lists:keystore(import, 1, Meta, { import, Receiver }),
-          { context, Context }
-        );
-      false -> Meta
-    end,
-
-  case elixir_dispatch:import_function(WrappedMeta, F, A, S) of
-    false -> compile_error(WrappedMeta, S#elixir_scope.file,
-                           "expected ~ts/~B to be a function, but it is a macro", [F, A]);
-    Else  -> Else
-  end;
-
-translate({ function, Meta, [Arg] }, S) ->
-  assert_no_match_or_guard_scope(Meta, 'function', S),
-  syntax_error(Meta, S#elixir_scope.file, "invalid args for function/1: ~ts",
-               ['Elixir.Macro':to_string(Arg)]);
-
-translate({ function, Meta, [_,_,_] = Args }, S) when is_list(Args) ->
-  elixir_errors:deprecation(Meta, S#elixir_scope.file, "function/3 is deprecated, please use Module.function/3 instead"),
-  assert_no_match_or_guard_scope(Meta, 'function', S),
-  { [A,B,C], SA } = translate_args(Args, S),
-  { { 'fun', ?line(Meta), { function, A, B, C } }, SA };
 
 %% @
 
@@ -134,7 +87,7 @@ translate({'@', Meta, [{ Name, _, Args }]}, S) ->
               }, S);
             _ ->
               Contents = 'Elixir.Module':get_attribute(S#elixir_scope.module, Name),
-              { elixir_tree_helpers:elixir_to_erl(Contents), S }
+              { elixir_utils:elixir_to_erl(?line(Meta), Contents, S), S }
           end;
         _ ->
           syntax_error(Meta, S#elixir_scope.file, "expected 0 or 1 argument for @~ts, got: ~p", [Name, length(Args)])
@@ -148,7 +101,7 @@ translate({'case', Meta, [Expr, KV]}, S) when is_list(KV) ->
   Clauses = elixir_clauses:get_pairs(Meta, do, KV, S),
   { TExpr, NS } = translate_each(Expr, S),
 
-  RClauses = case elixir_tree_helpers:returns_boolean(TExpr) of
+  RClauses = case elixir_utils:returns_boolean(TExpr) of
     true  -> rewrite_case_clauses(Clauses);
     false -> Clauses
   end,
@@ -189,7 +142,7 @@ translate({'receive', Meta, [KV] }, S) when is_list(KV) ->
     _ ->
       After = elixir_clauses:get_pairs(Meta, 'after', KV, S),
       { TClauses, SC } = elixir_clauses:match(Meta, Do ++ After, S),
-      { FClauses, TAfter } = elixir_tree_helpers:split_last(TClauses),
+      { FClauses, TAfter } = elixir_utils:split_last(TClauses),
       { _, _, [FExpr], _, FAfter } = TAfter,
       { { 'receive', ?line(Meta), FClauses, FExpr, FAfter }, SC }
   end;
@@ -237,6 +190,7 @@ translate({Kind, Meta, [Call, Expr]}, S) when ?defs(Kind) ->
   { elixir_def:wrap_definition(Kind, Meta, TCall, TExpr, CheckClauses, SE), SE };
 
 translate({Kind, Meta, [Name, Args, Guards, Expr]}, S) when ?defs(Kind) ->
+  elixir_errors:deprecation(Meta, S#elixir_scope.file, "~ts/4 is deprecated, please use ~ts/2 instead", [Kind, Kind]),
   assert_module_scope(Meta, Kind, S),
   assert_no_function_scope(Meta, Kind, S),
   { TName, SN }   = translate_each(Name, S),
@@ -286,7 +240,7 @@ translate_in(Meta, Left, Right, S) ->
       Expr = { atom, Line, false },
       { Cache, Expr };
     { cons, _, _, _ } ->
-      [H|T] = elixir_tree_helpers:cons_to_list(TRight),
+      [H|T] = elixir_utils:cons_to_list(TRight),
       Expr = lists:foldr(fun(X, Acc) ->
         { op, Line, 'orelse', { op, Line, '==', Var, X }, Acc }
       end, { op, Line, '==', Var, H }, T),

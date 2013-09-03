@@ -12,7 +12,7 @@ defmodule Mix.Tasks.Deps.Get do
 
   * `--no-compile` - skip compilation of dependencies
   * `--no-deps-check` - skip dependency check
-  * `--quiet` - do not output success message
+  * `--quiet` - do not output verbose messages
 
   """
 
@@ -21,7 +21,7 @@ defmodule Mix.Tasks.Deps.Get do
   def run(args) do
     Mix.Project.get! # Require the project to be available
 
-    { opts, rest } = OptionParser.parse(args, switches: [no_compile: :boolean, quiet: :boolean])
+    { opts, rest, _ } = OptionParser.parse(args, switches: [no_compile: :boolean, quiet: :boolean])
 
     if rest != [] do
       { _, acc } = Enum.map_reduce by_name(rest), init, deps_getter(&1, &2)
@@ -43,7 +43,12 @@ defmodule Mix.Tasks.Deps.Get do
       Mix.Deps.Lock.write(lock)
 
       unless opts[:no_compile] do
-        Mix.Task.run("deps.compile", apps)
+        case opts[:quiet] do
+          true ->
+            Mix.Task.run("deps.compile", ["--quiet"|apps])
+          _ ->
+            Mix.Task.run("deps.compile", apps)
+        end
         unless opts[:no_deps_check], do: Mix.Task.run("deps.check", [])
       end
     end

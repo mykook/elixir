@@ -1,4 +1,4 @@
-%% Main entry point for translations. Are macros that cannot be
+%% Main entry point for translations. All macros that cannot be
 %% overriden are defined in this file.
 -module(elixir_translator).
 -export([forms/4, 'forms!'/4]).
@@ -77,6 +77,7 @@ translate_each({ '__op__', Meta, [Op, Expr] }, S) when is_atom(Op) ->
   { { op, ?line(Meta), convert_op(Op), TExpr }, NS };
 
 translate_each({ '__op__', Meta, [Op, Left, Right] }, S) when is_atom(Op) ->
+  assert_no_match_scope_for_bin_op(Meta, Op, S),
   { [TLeft, TRight], NS }  = translate_args([Left, Right], S),
   { { op, ?line(Meta), convert_op(Op), TLeft, TRight }, NS };
 
@@ -117,34 +118,16 @@ translate_each({ require, Meta, [Ref, KV] }, S) ->
 translate_each({ import, Meta, [Left] }, S) ->
   translate_each({ import, Meta, [Left, []]}, S);
 
-translate_each({ import, Meta, [Left,Opts] }, S) when is_list(Opts) ->
-  translate_each({ import, Meta, [default, Left, Opts]}, S);
-
-translate_each({ import, Meta, [Left,Right] }, S) ->
-  %% Second argument is ambiguous, translate it and take a peek
-  case translate_each(Right, S) of
-    { { atom, _, _ }, _ } ->
-      translate_each({ import, Meta, [Left, Right, []]}, S);
-    _ ->
-      translate_each({ import, Meta, [default, Left, Right]}, S)
-  end;
-
-translate_each({ import, Meta, [Left, Right, KV] }, S) ->
+translate_each({ import, Meta, [Ref, KV] }, S) ->
   assert_no_match_or_guard_scope(Meta, import, S),
-  { TSelector, SL } = translate_each(Left, S),
-  { TRef, SR } = translate_each(Right, SL),
-  { TKV, ST }  = translate_opts(Meta, import, [as, only, except, warn], no_alias_opts(KV), SR),
-
-  Selector = case TSelector of
-    { atom, _,  SelectorAtom } -> SelectorAtom;
-    _ -> compile_error(Meta, S#elixir_scope.file, "invalid selector for import, expected a compile time atom")
-  end,
+  { TRef, SR } = translate_each(Ref, S),
+  { TKV, ST }  = translate_opts(Meta, import, [only, except, warn], KV, SR),
 
   case TRef of
-    { atom, _, Old } ->
-      elixir_aliases:ensure_loaded(Meta, Old, ST),
-      SF = elixir_import:import(Meta, Old, TKV, Selector, ST),
-      translate_require(Meta, Old, TKV, SF);
+    { atom, _, Atom } ->
+      elixir_aliases:ensure_loaded(Meta, Atom, ST),
+      SF = elixir_import:import(Meta, Atom, TKV, ST),
+      translate_require(Meta, Atom, TKV, SF);
     _ ->
       compile_error(Meta, S#elixir_scope.file, "invalid name for import, expected a compile time atom or alias")
   end;
@@ -162,7 +145,7 @@ translate_each({ '__DIR__', _Meta, Atom }, S) when is_atom(Atom) ->
 
 translate_each({ '__ENV__', Meta, Atom }, S) when is_atom(Atom) ->
   Env = elixir_scope:to_ex_env({ ?line(Meta), S }),
-  { elixir_tree_helpers:elixir_to_erl(Env), S };
+  { elixir_utils:elixir_to_erl(Env), S };
 
 translate_each({ '__CALLER__', Meta, Atom }, S) when is_atom(Atom) ->
   { { var, ?line(Meta), '__CALLER__' }, S#elixir_scope{caller=true} };
@@ -184,7 +167,7 @@ translate_each({ '__aliases__', Meta, _ } = Alias, S) ->
           elixir_tracker:record_alias(Receiver, S#elixir_scope.module),
           { { atom, ?line(Meta), Receiver }, SA };
         false ->
-          Args = [elixir_tree_helpers:list_to_cons(?line(Meta), TAliases)],
+          Args = [elixir_utils:list_to_cons(?line(Meta), TAliases)],
           { ?wrap_call(?line(Meta), elixir_aliases, concat, Args), SA }
       end
   end;
@@ -657,10 +640,13 @@ translate_apply(Meta, TLeft, TRight, Args, S, SL, SR) ->
 
 %% __op__ helpers
 
+assert_no_match_scope_for_bin_op(Meta, Op, S)
+    when Op == 'and'; Op == 'or' ->
+  elixir_errors:assert_no_match_scope(Meta, Op, S);
+assert_no_match_scope_for_bin_op(_Meta, _Op, _S) -> ok.
+
 convert_op('and')  -> 'andalso';
 convert_op('or')   -> 'orelse';
-convert_op('and!') -> 'and';
-convert_op('or!')  -> 'or';
 convert_op('!==')  -> '=/=';
 convert_op('===')  -> '=:=';
 convert_op('!=')   ->  '/=';
@@ -686,7 +672,7 @@ assert_no_ambiguous_op(_Atom, _Meta, _Args, _S) -> ok.
 %% Comprehensions
 
 translate_comprehension(Meta, Kind, Args, S) ->
-  case elixir_tree_helpers:split_last(Args) of
+  case elixir_utils:split_last(Args) of
     { Cases, [{do,Expr}] } ->
       { TCases, SC } = lists:mapfoldl(fun(C, Acc) -> translate_comprehension_clause(Meta, C, Acc) end, S, Cases),
       { TExpr, SE }  = translate_comprehension_do(Meta, Kind, Expr, SC),
@@ -720,5 +706,5 @@ translate_comprehension_clause(_Meta, {inlist, Meta, [Left, Right]}, S) ->
 translate_comprehension_clause(Meta, X, S) ->
   Line = ?line(Meta),
   { TX, TS } = translate_each(X, S),
-  { BX, BS } = elixir_tree_helpers:convert_to_boolean(Line, TX, true, false, TS),
+  { BX, BS } = elixir_utils:convert_to_boolean(Line, TX, true, false, TS),
   { { match, Line, { var, Line, '_' }, BX }, BS }.

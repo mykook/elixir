@@ -392,7 +392,7 @@ defmodule FileTest do
 
     test :regular do
       assert File.regular?(__FILE__)
-      assert File.regular?(binary_to_list(__FILE__))
+      assert File.regular?(String.to_char_list!(__FILE__))
       refute File.regular?("#{__FILE__}.unknown")
     end
 
@@ -893,49 +893,49 @@ defmodule FileTest do
     end
   end
 
-  test :iterator do
+  test :io_stream do
     src  = File.open! fixture_path("file.txt")
     dest = tmp_path("tmp_test.txt")
 
     try do
-      iterator = IO.stream(src)
+      stream = IO.stream(src, :line)
       File.open dest, [:write], fn(target) ->
-        Enum.each iterator, fn(line) ->
-          IO.write target, Regex.replace(%r/"/, line, "'")
+        Enum.each stream, fn(line) ->
+          IO.write target, String.replace(line, "O", "A")
         end
       end
-      assert File.read(dest) == { :ok, "FOO\n" }
+      assert File.read(dest) == { :ok, "FAA\n" }
     after
       File.rm(dest)
     end
   end
 
-  test :iterator_with_path do
+  test :stream_line do
     src  = fixture_path("file.txt")
     dest = tmp_path("tmp_test.txt")
 
     try do
-      iterator = File.stream!(src)
+      stream = File.stream!(src)
       File.open dest, [:write], fn(target) ->
-        Enum.each iterator, fn(line) ->
-          IO.write target, Regex.replace(%r/"/, line, "'")
+        Enum.each stream, fn(line) ->
+          IO.write target, String.replace(line, "O", "A")
         end
       end
-      assert File.read(dest) == { :ok, "FOO\n" }
+      assert File.read(dest) == { :ok, "FAA\n" }
     after
       File.rm(dest)
     end
   end
 
-  test :iterator! do
+  test :stream_bytes do
     src  = fixture_path("file.txt")
     dest = tmp_path("tmp_test.txt")
 
     try do
-      iterator = File.stream!(src)
+      stream = File.stream!(src, [], 1)
       File.open dest, [:write], fn(target) ->
-        Enum.each iterator, fn(line) ->
-          IO.write target, Regex.replace(%r/"/, line, "'")
+        Enum.each stream, fn(line) ->
+          IO.write target, String.replace(line, "OO", "AA")
         end
       end
       assert File.read(dest) == { :ok, "FOO\n" }
@@ -944,15 +944,66 @@ defmodule FileTest do
     end
   end
 
-  test :biniterator do
+  test :stream! do
+    src  = fixture_path("file.txt")
+    dest = tmp_path("tmp_test.txt")
+
+    try do
+      stream = File.stream!(src)
+      File.open dest, [:write], fn(target) ->
+        Enum.each stream, fn(line) ->
+          IO.write target, String.replace(line, "O", "A")
+        end
+      end
+      assert File.read(dest) == { :ok, "FAA\n" }
+    after
+      File.rm(dest)
+    end
+  end
+
+  test :io_binstream do
     src  = File.open! fixture_path("file.txt")
     dest = tmp_path("tmp_test.txt")
 
     try do
-      iterator = IO.binstream(src)
+      stream = IO.binstream(src, :line)
       File.open dest, [:write], fn(target) ->
-        Enum.each iterator, fn(line) ->
-          IO.write target, Regex.replace(%r/"/, line, "'")
+        Enum.each stream, fn(line) ->
+          IO.write target, String.replace(line, "O", "A")
+        end
+      end
+      assert File.read(dest) == { :ok, "FAA\n" }
+    after
+      File.rm(dest)
+    end
+  end
+
+  test :binstream_line do
+    src  = fixture_path("file.txt")
+    dest = tmp_path("tmp_test.txt")
+
+    try do
+      stream = File.binstream!(src)
+      File.open dest, [:write], fn(target) ->
+        Enum.each stream, fn(line) ->
+          IO.write target, String.replace(line, "O", "A")
+        end
+      end
+      assert File.read(dest) == { :ok, "FAA\n" }
+    after
+      File.rm(dest)
+    end
+  end
+
+  test :binstream_bytes do
+    src  = fixture_path("file.txt")
+    dest = tmp_path("tmp_test.txt")
+
+    try do
+      stream = File.binstream!(src, [], 1)
+      File.open dest, [:write], fn(target) ->
+        Enum.each stream, fn(line) ->
+          IO.write target, String.replace(line, "OO", "AA")
         end
       end
       assert File.read(dest) == { :ok, "FOO\n" }
@@ -961,35 +1012,18 @@ defmodule FileTest do
     end
   end
 
-  test :biniterator_with_path do
+  test :binstream! do
     src  = fixture_path("file.txt")
     dest = tmp_path("tmp_test.txt")
 
     try do
-      iterator = File.binstream!(src)
+      stream = File.binstream!(src)
       File.open dest, [:write], fn(target) ->
-        Enum.each iterator, fn(line) ->
-          IO.write target, Regex.replace(%r/"/, line, "'")
+        Enum.each stream, fn(line) ->
+          IO.write target, String.replace(line, "O", "A")
         end
       end
-      assert File.read(dest) == { :ok, "FOO\n" }
-    after
-      File.rm(dest)
-    end
-  end
-
-  test :biniterator! do
-    src  = fixture_path("file.txt")
-    dest = tmp_path("tmp_test.txt")
-
-    try do
-      iterator = File.binstream!(src)
-      File.open dest, [:write], fn(target) ->
-        Enum.each iterator, fn(line) ->
-          IO.write target, Regex.replace(%r/"/, line, "'")
-        end
-      end
-      assert File.read(dest) == { :ok, "FOO\n" }
+      assert File.read(dest) == { :ok, "FAA\n" }
     after
       File.rm(dest)
     end
@@ -1099,11 +1133,13 @@ defmodule FileTest do
 
   test :touch_with_no_file do
     fixture = tmp_path("tmp_test.txt")
+    time = { { 2010, 4, 17 }, { 14, 0, 0 }}
 
     try do
       refute File.exists?(fixture)
-      assert File.touch(fixture) == :ok
+      assert File.touch(fixture, time) == :ok
       assert { :ok, "" } == File.read(fixture)
+      assert File.stat!(fixture).mtime == time
     after
       File.rm(fixture)
     end

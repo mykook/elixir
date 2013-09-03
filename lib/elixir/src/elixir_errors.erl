@@ -8,7 +8,7 @@
   assert_no_match_scope/3, assert_no_guard_scope/3,
   assert_no_match_or_guard_scope/3, warn/1,
   handle_file_warning/2, handle_file_warning/3, handle_file_error/2,
-  deprecation/3, deprecation/4, file_format/3]).
+  deprecation/3, deprecation/4]).
 -include("elixir.hrl").
 
 warn(Warning) ->
@@ -33,7 +33,7 @@ syntax_error(Meta, File, Message) when is_binary(Message) ->
 
 syntax_error(Meta, File, Format, Args)  ->
   Message = io_lib:format(Format, Args),
-  raise(Meta, File, 'Elixir.SyntaxError', unicode:characters_to_binary(Message)).
+  raise(Meta, File, 'Elixir.SyntaxError', elixir_utils:characters_to_binary(Message)).
 
 compile_error(Meta, File, Message) when is_list(Message) ->
   compile_error(Meta, File, iolist_to_binary(Message));
@@ -43,7 +43,7 @@ compile_error(Meta, File, Message) when is_binary(Message) ->
 
 compile_error(Meta, File, Format, Args)  ->
   Message = io_lib:format(Format, Args),
-  raise(Meta, File, 'Elixir.CompileError', unicode:characters_to_binary(Message)).
+  raise(Meta, File, 'Elixir.CompileError', elixir_utils:characters_to_binary(Message)).
 
 %% Raised on tokenizing/parsing
 
@@ -67,7 +67,7 @@ parse_error(Meta, File, Error, Token) ->
 
   BinToken = if
     Token == [] -> <<>>;
-    true        -> unicode:characters_to_binary(Token)
+    true        -> elixir_utils:characters_to_binary(Token)
   end,
 
   Message = <<BinError / binary, BinToken / binary >>,
@@ -160,6 +160,15 @@ handle_file_warning(File, Desc) ->
 
 -spec handle_file_error(file:filename(), {non_neg_integer(), module(), any()}) -> no_return().
 
+handle_file_error(File, {Line,erl_lint,{unsafe_var,Var,{In,_Where}}}) ->
+  Translated = case In of
+    'orelse'  -> 'or';
+    'andalso' -> 'and';
+    _ -> In
+  end,
+  Message = io_lib:format("cannot define variable ~ts inside ~ts", [format_var(Var), Translated]),
+  raise(Line, File, 'Elixir.CompileError', iolist_to_binary(Message));
+
 handle_file_error(File, {Line,Module,Desc}) ->
   form_error(Line, File, Module, Desc).
 
@@ -209,10 +218,10 @@ raise(Line, File, Kind, Message) when is_integer(Line) ->
   erlang:raise(error, Exception, tl(Stacktrace)).
 
 file_format(0, File, Message) ->
-  io_lib:format("~ts: ~ts~n", [File, Message]);
+  io_lib:format("~ts: ~ts~n", [elixir_utils:relative_to_cwd(File), Message]);
 
 file_format(Line, File, Message) ->
-  io_lib:format("~ts:~w: ~ts~n", [File, Line, Message]).
+  io_lib:format("~ts:~w: ~ts~n", [elixir_utils:relative_to_cwd(File), Line, Message]).
 
 format_var(Var) ->
   list_to_atom(lists:takewhile(fun(X) -> X /= $@ end, atom_to_list(Var))).

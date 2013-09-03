@@ -43,7 +43,7 @@ docs_table(Module) ->
 
 translate(Meta, Ref, Block, S) ->
   Line            = ?line(Meta),
-  MetaBlock       = elixir_tree_helpers:elixir_to_erl(Block),
+  MetaBlock       = elixir_utils:elixir_to_erl(Line, Block, S),
   { MetaS, Vars } = elixir_scope:serialize_with_vars(Line, S),
 
   Args = [{integer, Line, Line}, Ref, MetaBlock, Vars, MetaS],
@@ -59,7 +59,7 @@ compile(Line, Module, Block, Vars, #elixir_scope{context_modules=FileModules} = 
   end,
 
   File = S#elixir_scope.file,
-  FileList = binary_to_list(File),
+  FileList = elixir_utils:characters_to_list(File),
 
   check_module_availability(Line, File, Module, C),
   build(Line, File, Module),
@@ -314,11 +314,11 @@ add_info_function(Line, File, Module, Export, Def, Defmacro, C) ->
   end.
 
 functions_clause(Def) ->
-  { clause, 0, [{ atom, 0, functions }], [], [elixir_tree_helpers:elixir_to_erl(Def)] }.
+  { clause, 0, [{ atom, 0, functions }], [], [elixir_utils:elixir_to_erl(Def)] }.
 
 macros_clause(Module, Def, Defmacro) ->
   All = handle_builtin_macros(Module, Def, Defmacro),
-  { clause, 0, [{ atom, 0, macros }], [], [elixir_tree_helpers:elixir_to_erl(All)] }.
+  { clause, 0, [{ atom, 0, macros }], [], [elixir_utils:elixir_to_erl(All)] }.
 
 handle_builtin_macros('Elixir.Kernel', Def, Defmacro) ->
   ordsets:subtract(ordsets:union(Defmacro,
@@ -330,14 +330,14 @@ module_clause(Module) ->
 
 docs_clause(Module, true) ->
   Docs = ordsets:from_list(ets:tab2list(docs_table(Module))),
-  { clause, 0, [{ atom, 0, docs }], [], [elixir_tree_helpers:elixir_to_erl(Docs)] };
+  { clause, 0, [{ atom, 0, docs }], [], [elixir_utils:elixir_to_erl(Docs)] };
 
 docs_clause(_Module, _) ->
   { clause, 0, [{ atom, 0, docs }], [], [{ atom, 0, nil }] }.
 
 moduledoc_clause(Line, Module, true) ->
   Docs = 'Elixir.Module':get_attribute(Module, moduledoc),
-  { clause, 0, [{ atom, 0, moduledoc }], [], [elixir_tree_helpers:elixir_to_erl({ Line, Docs })] };
+  { clause, 0, [{ atom, 0, moduledoc }], [], [elixir_utils:elixir_to_erl({ Line, Docs })] };
 
 moduledoc_clause(_Line, _Module, _) ->
   { clause, 0, [{ atom, 0, moduledoc }], [], [{ atom, 0, nil }] }.
@@ -368,7 +368,7 @@ eval_callbacks(Line, Module, Name, Args, RawS) ->
           erl_eval:exprs([Tree], Binding)
         catch
           Kind:Reason ->
-            Info = { M, F, length(Args), [{ file, binary_to_list(S#elixir_scope.file) }, { line, Line }] },
+            Info = { M, F, length(Args), [{ file, elixir_utils:characters_to_list(S#elixir_scope.file) }, { line, Line }] },
             erlang:raise(Kind, Reason, munge_stacktrace(Info, erlang:get_stacktrace()))
         end
     end

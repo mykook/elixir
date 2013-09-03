@@ -375,6 +375,33 @@ defmodule Kernel.WarningTest do
     purge [Sample1, Sample1.Atom]
   end
 
+  test :overidden_def do
+    assert capture_err(fn ->
+      Code.eval_string """
+      defmodule Sample do
+        def foo(x, 1), do: x + 1
+        def bar(), do: nil
+        def foo(x, 2), do: x * 2
+      end
+      """
+    end) =~ "nofile:4: clauses for the same def should be grouped together, def foo/2 was previously defined (nofile:2)"
+  after
+    purge [Sample]
+  end
+
+  test :warning_with_overriden_file do
+    assert capture_err(fn ->
+      Code.eval_string """
+      defmodule Sample do
+        @file "sample"
+        def foo(x), do: :ok
+      end
+      """
+    end) =~ "sample:3: variable x is unused"
+  after
+    purge [Sample]
+  end
+
   defp purge(list) when is_list(list) do
     Enum.each list, purge(&1)
   end

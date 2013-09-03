@@ -63,7 +63,7 @@ defmodule Mix.Tasks.Compile.Erlang do
   Runs this task.
   """
   def run(args) do
-    { opts, _ } = OptionParser.parse(args, switches: [force: :boolean])
+    { opts, _, _ } = OptionParser.parse(args, switches: [force: :boolean])
 
     project      = Mix.project
     source_paths = project[:erlc_paths]
@@ -93,11 +93,10 @@ defmodule Mix.Tasks.Compile.Erlang do
   end
 
   @doc """
-  Returns the path of the Erlang manifest.
+  Returns Erlang manifests.
   """
-  def manifest do
-    Path.join(Mix.project[:compile_path], @manifest)
-  end
+  def manifests, do: [manifest]
+  defp manifest, do: Path.join(Mix.project[:compile_path], @manifest)
 
   @doc """
   Extracts the extensions from the mappings, automatically
@@ -137,7 +136,7 @@ defmodule Mix.Tasks.Compile.Erlang do
   def compile_mappings(manifest, mappings, src_ext, dest_ext, force, callback) do
     files = lc { src, dest } inlist mappings do
               extract_targets(src, src_ext, dest, dest_ext, force)
-            end |> List.concat
+            end |> Enum.concat
 
     compile_mappings(manifest, files, callback)
   end
@@ -232,7 +231,7 @@ defmodule Mix.Tasks.Compile.Erlang do
 
     lc file inlist files do
       module = module_from_artifact(file)
-      target = Path.join(dir2, module <> "." <> to_binary(dest_ext))
+      target = Path.join(dir2, module <> "." <> to_string(dest_ext))
 
       if force || Mix.Utils.stale?([file], [target]) do
         { file, module, target }

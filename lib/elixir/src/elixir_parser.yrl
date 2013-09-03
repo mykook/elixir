@@ -19,14 +19,14 @@ Nonterminals
   kw_eol kw_expr kw_comma kw
   call_args_no_parens_kw_expr call_args_no_parens_kw_comma call_args_no_parens_kw
   dot_op dot_alias dot_identifier dot_op_identifier dot_do_identifier
-  dot_paren_identifier dot_punctuated_identifier dot_bracket_identifier
+  dot_paren_identifier dot_bracket_identifier
   var list bracket_access bit_string tuple
   do_block fn_eol do_eol end_eol block_eol block_item block_list
   .
 
 Terminals
-  identifier kw_identifier punctuated_identifier
-  bracket_identifier paren_identifier do_identifier block_identifier
+  identifier kw_identifier bracket_identifier
+  paren_identifier do_identifier block_identifier
   fn 'end' aliases
   number signed_number atom bin_string list_string sigil
   dot_call_op op_identifier
@@ -42,6 +42,7 @@ Rootsymbol grammar.
 %% There are two shift/reduce conflicts coming from call_args_parens.
 Expect 2.
 
+%% Changes in ops and precedence should be reflected on lib/elixir/lib/macro.ex
 Left       5 do.
 Right     10 stab_op_eol.     %% ->
 Left      20 ','.
@@ -95,7 +96,6 @@ matched_expr -> at_op_eol no_parens_expr : build_unary_op('$1', '$2').
 matched_expr -> bracket_at_expr : '$1'.
 matched_expr -> identifier_expr : '$1'.
 
-no_parens_expr -> dot_punctuated_identifier call_args_no_parens_many_strict : build_identifier('$1', '$2').
 no_parens_expr -> dot_op_identifier call_args_no_parens_many_strict : build_identifier('$1', '$2').
 no_parens_expr -> dot_identifier call_args_no_parens_many_strict : build_identifier('$1', '$2').
 
@@ -109,7 +109,6 @@ unmatched_expr -> block_expr : '$1'.
 block_expr -> parens_call call_args_parens do_block : build_identifier('$1', '$2' ++ '$3').
 block_expr -> parens_call call_args_parens call_args_parens do_block : build_nested_parens('$1', '$2', '$3' ++ '$4').
 block_expr -> dot_do_identifier do_block : build_identifier('$1', '$2').
-block_expr -> dot_punctuated_identifier call_args_no_parens_all do_block : build_identifier('$1', '$2' ++ '$3').
 block_expr -> dot_identifier call_args_no_parens_all do_block : build_identifier('$1', '$2' ++ '$3').
 
 op_expr -> match_op_eol expr : { '$1', '$2' }.
@@ -166,10 +165,8 @@ matched_op_expr -> type_op_eol matched_expr : { '$1', '$2' }.
 matched_op_expr -> comp_op_eol matched_expr : { '$1', '$2' }.
 matched_op_expr -> arrow_op_eol matched_expr : { '$1', '$2' }.
 
-identifier_expr -> dot_punctuated_identifier call_args_no_parens_one : build_identifier('$1', '$2').
 identifier_expr -> dot_op_identifier call_args_no_parens_one : build_identifier('$1', '$2').
 identifier_expr -> dot_identifier call_args_no_parens_one : build_identifier('$1', '$2').
-identifier_expr -> dot_punctuated_identifier : build_identifier('$1', []).
 identifier_expr -> dot_do_identifier : build_identifier('$1', nil).
 identifier_expr -> var : build_identifier('$1', nil).
 identifier_expr -> max_expr : '$1'.
@@ -364,9 +361,6 @@ dot_bracket_identifier -> matched_expr dot_op bracket_identifier : build_dot('$2
 dot_paren_identifier -> paren_identifier : '$1'.
 dot_paren_identifier -> matched_expr dot_op paren_identifier : build_dot('$2', '$1', '$3').
 
-dot_punctuated_identifier -> punctuated_identifier : '$1'.
-dot_punctuated_identifier -> matched_expr dot_op punctuated_identifier : build_dot('$2', '$1', '$3').
-
 parens_call -> dot_paren_identifier : '$1'.
 parens_call -> matched_expr dot_call_op : { '.', [{line,?line('$2')}], ['$1'] }. % Fun/local calls
 
@@ -505,7 +499,6 @@ build_tuple(Marker, Args) ->
 
 %% Blocks
 
-build_block([nil])                                      -> { '__block__', [], [nil] };
 build_block([{Op,_,[_]}]=Exprs) when ?rearrange_uop(Op) -> { '__block__', [], Exprs };
 build_block([{unquote_splicing,_,Args}]=Exprs) when
                                       length(Args) =< 2 -> { '__block__', [], Exprs };
@@ -546,8 +539,8 @@ build_identifier({ _, Line, Identifier }, Args) ->
   { Identifier, [{line,Line}], Args }.
 
 extract_identifier({ Kind, _, Identifier }) when
-    Kind == identifier; Kind == punctuated_identifier; Kind == bracket_identifier;
-    Kind == paren_identifier; Kind == do_identifier; Kind == op_identifier ->
+    Kind == identifier; Kind == bracket_identifier; Kind == paren_identifier;
+    Kind == do_identifier; Kind == op_identifier ->
   Identifier;
 
 extract_identifier(Other) -> Other.
@@ -572,10 +565,10 @@ build_sigil({ sigil, Line, Sigil, Parts, Modifiers }) ->
 build_bin_string({ bin_string, _Line, [H] }) when is_binary(H) -> H;
 build_bin_string({ bin_string, Line, Args }) -> { '<<>>', [{line,Line}], Args }.
 
-build_list_string({ list_string, _Line, [H] }) when is_binary(H) -> unicode:characters_to_list(H);
+build_list_string({ list_string, _Line, [H] }) when is_binary(H) -> elixir_utils:characters_to_list(H);
 build_list_string({ list_string, Line, Args }) ->
   Meta = [{line,Line}],
-  { { '.', Meta, [unicode, characters_to_list] }, Meta, [{ '<<>>', Meta, Args}] }.
+  { { '.', Meta, ['Elixir.String', 'to_char_list!'] }, Meta, [{ '<<>>', Meta, Args}] }.
 
 build_atom({ atom, _Line, Atom }) when is_atom(Atom) -> Atom;
 build_atom({ atom, Line, Args }) ->
@@ -614,7 +607,7 @@ unwrap_splice([{ '__block__', [], [{ unquote_splicing, _, _ }] = Splice }]) ->
 unwrap_splice(Other) -> Other.
 
 unwrap_when(Args) ->
-  case elixir_tree_helpers:split_last(Args) of
+  case elixir_utils:split_last(Args) of
     { Start, { 'when', Meta, [_, _] = End } } ->
       [{ 'when', Meta, Start ++ End }];
     { _, _ } ->

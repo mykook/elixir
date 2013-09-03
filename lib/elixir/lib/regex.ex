@@ -1,5 +1,5 @@
 defmodule Regex do
-  @moduledoc %B"""
+  @moduledoc %S"""
   Regular expressions for Elixir built on top of the re module
   in the Erlang Standard Library. More information can be found
   in the re documentation: http://www.erlang.org/doc/man/re.html
@@ -44,25 +44,44 @@ defmodule Regex do
   """
 
   defrecordp :regex, Regex, [:re_pattern, :source, :options, :groups]
-  @type t :: { Regex, term, term, term, term }
+  @type t :: { Regex, term, binary, binary, [atom] }
 
   defexception CompileError, message: "regex could not be compiled"
 
   @doc """
-  Compiles the regular expression according to the given options.
+  Compiles the regular expression.
+
+  The given options can either be a binary with the characters
+  representing the same regex options given to the `%r` sigil,
+  or a list of options, as expected by the Erlang `re` docs.
 
   It returns `{ :ok, regex }` in case of success,
   `{ :error, reason }` otherwise.
   """
-  def compile(source, options // "") when is_binary(source) do
-    options = to_binary(options)
-    opts    = translate_options(options)
+  @spec compile(binary, binary | [term]) :: t
+  def compile(source, options // "")
+
+  def compile(source, options) when is_binary(options) do
+    case translate_options(options) do
+      { :error, rest } ->
+        { :error, { :invalid_option, rest } }
+
+      translated_options ->
+        compile(source, translated_options, options)
+    end
+  end
+
+  def compile(source, options) when is_list(options) do
+    compile(source, options, "")
+  end
+
+  defp compile(source, opts, doc_opts) when is_binary(source) do
     re_opts = opts -- [:groups]
     groups  = if opts != re_opts, do: parse_groups(source)
 
     case :re.compile(source, re_opts) do
       { :ok, re_pattern } ->
-        { :ok, regex(re_pattern: re_pattern, source: source, options: options, groups: groups) }
+        { :ok, regex(re_pattern: re_pattern, source: source, options: doc_opts, groups: groups) }
       error ->
         error
     end
@@ -95,8 +114,8 @@ defmodule Regex do
   end
 
   @doc """
-  Runs the regular expression against the given string.
-  It returns a list with all matches or `nil` if no match occurred.
+  Runs the regular expression against the given string until the first match.
+  It returns a list with all captures or `nil` if no match occurred.
 
   When the option `:capture` is set to `:groups`, it will capture all
   the groups in the regex.
@@ -139,7 +158,7 @@ defmodule Regex do
       [foo: "d"]
       iex> Regex.captures(%r/a(?<foo>b)c(?<bar>d)/g, "abcd")
       [foo: "b", bar: "d"]
-      iex> Regex.captures(%r/a(?<foo>b)c(?<bar>d)/g, "efgh") 
+      iex> Regex.captures(%r/a(?<foo>b)c(?<bar>d)/g, "efgh")
       nil
 
   """
@@ -244,7 +263,7 @@ defmodule Regex do
       ["a","b","c"]
       iex> Regex.split(%r/-/, "a-b-c", [parts: 2])
       ["a","b-c"]
-      iex> Regex.split(%r/-/, "abc")              
+      iex> Regex.split(%r/-/, "abc")
       ["abc"]
   """
 
@@ -260,10 +279,16 @@ defmodule Regex do
 
     return = Keyword.get(options, :return, return_for(string))
     opts   = [return: return, parts: parts]
-    :re.split(string, compiled, opts)
+    splits = :re.split(string, compiled, opts)
+
+    if Keyword.get(options, :trim, false) do
+      lc split inlist splits, split != "", do: split
+    else
+      splits
+    end
   end
 
-  @doc %B"""
+  @doc %S"""
   Receives a regex, a binary and a replacement, returns a new
   binary where the all matches are replaced by replacement.
 
@@ -293,10 +318,10 @@ defmodule Regex do
     :re.replace(string, compiled, replacement, opts)
   end
 
-  { :ok, pattern } = :re.compile(%B"[.^$*+?()[{\\\|\s#]", [:unicode])
+  { :ok, pattern } = :re.compile(%S"[.^$*+?()[{\\\|\s#]", [:unicode])
   @escape_pattern pattern
 
-  @doc %B"""
+  @doc %S"""
   Escapes a string to be literally matched in a regex.
 
   ## Examples
@@ -315,7 +340,7 @@ defmodule Regex do
   # Helpers
 
   @doc false
-  # Unescape map function used by Macro.unescape_binary.
+  # Unescape map function used by Macro.unescape_string.
   def unescape_map(?f), do: ?\f
   def unescape_map(?n), do: ?\n
   def unescape_map(?r), do: ?\r
@@ -338,8 +363,9 @@ defmodule Regex do
   defp translate_options(<<?m, t :: binary>>), do: [:multiline|translate_options(t)]
   defp translate_options(<<?g, t :: binary>>), do: [:groups|translate_options(t)]
   defp translate_options(<<>>), do: []
+  defp translate_options(rest), do: { :error, rest }
 
-  { :ok, pattern } = :re.compile(%B"\(\?<(?<G>[^>]*)>")
+  { :ok, pattern } = :re.compile(%S"\(\?<(?<G>[^>]*)>")
   @groups_pattern pattern
 
   defp parse_groups(source) do

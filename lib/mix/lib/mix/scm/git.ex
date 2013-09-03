@@ -38,7 +38,7 @@ defmodule Mix.SCM.Git do
   def checkout(opts) do
     path     = opts[:dest]
     location = location(opts[:git])
-    command  = %b[git clone --no-checkout --progress "#{location}" "#{path}"]
+    command  = %s(git clone --no-checkout --progress "#{location}" "#{path}")
 
     run_cmd_or_raise(command)
     File.cd! path, fn -> do_checkout(opts) end
@@ -123,7 +123,7 @@ defmodule Mix.SCM.Git do
   end
 
   defp check_rev(fin, acc) when fin == [?\n] or fin == [] do
-    Enum.reverse(acc) |> list_to_binary
+    Enum.reverse(acc) |> iolist_to_binary
   end
 
   defp check_rev(_, _) do

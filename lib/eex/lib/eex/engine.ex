@@ -1,5 +1,5 @@
 defmodule EEx.Engine do
-  @moduledoc %B"""
+  @moduledoc %S"""
   This is the basic EEx engine that ships with Elixir.
   An engine needs to implement two functions:
 
@@ -43,7 +43,7 @@ defmodule EEx.Engine do
   def handle_expr(buffer, "=", expr) do
     quote do
       tmp = unquote(buffer)
-      tmp <> to_binary(unquote(expr))
+      tmp <> to_string(unquote(expr))
     end
   end
 

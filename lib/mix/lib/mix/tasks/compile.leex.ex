@@ -40,7 +40,7 @@ defmodule Mix.Tasks.Compile.Leex do
   Runs this task.
   """
   def run(args) do
-    { opts, _ } = OptionParser.parse(args, switches: [force: :boolean])
+    { opts, _, _ } = OptionParser.parse(args, switches: [force: :boolean])
 
     project      = Mix.project
     source_paths = project[:erlc_paths]
@@ -55,9 +55,8 @@ defmodule Mix.Tasks.Compile.Leex do
   end
 
   @doc """
-  Returns Leex manifest.
+  Returns Leex manifests.
   """
-  def manifest do
-    Path.join(Mix.project[:compile_path], @manifest)
-  end
+  def manifests, do: [manifest]
+  defp manifest, do: Path.join(Mix.project[:compile_path], @manifest)
 end

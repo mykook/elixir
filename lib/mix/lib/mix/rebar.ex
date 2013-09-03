@@ -79,12 +79,12 @@ defmodule Mix.Rebar do
     if sub_dirs = config[:sub_dirs] do
       sub_dirs = sub_dirs
        |> Enum.map(Path.wildcard(&1))
-       |> List.concat
+       |> Enum.concat
        |> Enum.filter(File.dir?(&1))
 
       Enum.map(sub_dirs, fn(dir) ->
         recur(dir, fun)
-      end) |> List.concat
+      end) |> Enum.concat
     end
 
     [File.cd!(dir, fn -> fun.(config) end)]
@@ -99,9 +99,9 @@ defmodule Mix.Rebar do
 
     { ref, source } = case source do
       [""|s]                  -> { [branch: "HEAD"], s }
-      [{ :branch, branch }|s] -> { [branch: to_binary(branch)], s }
-      [{ :tag, tag }|s]       -> { [tag: to_binary(tag)], s }
-      [ref|s]                 -> { [ref: to_binary(ref)], s }
+      [{ :branch, branch }|s] -> { [branch: to_string(branch)], s }
+      [{ :tag, tag }|s]       -> { [tag: to_string(tag)], s }
+      [ref|s]                 -> { [ref: to_string(ref)], s }
       _                       -> { [], [] }
     end
 
@@ -111,7 +111,7 @@ defmodule Mix.Rebar do
       _               -> []
     end
 
-    opts = [{ scm, to_binary(url) }] ++ ref ++ raw
+    opts = [{ scm, to_string(url) }] ++ ref ++ raw
     { app, compile_req(req), opts }
   end
 
@@ -120,7 +120,7 @@ defmodule Mix.Rebar do
   end
 
   defp compile_req(req) do
-    case to_binary(req) |> Regex.compile do
+    case Regex.compile to_string(req) do
       { :ok, re } ->
         re
       { :error, reason } ->
@@ -129,10 +129,12 @@ defmodule Mix.Rebar do
   end
 
   defp eval_script(script_path, config) do
-    script = Path.basename(script_path) |> binary_to_list
+    script = Path.basename(script_path) |> String.to_char_list!
+
     result = File.cd!(Path.dirname(script_path), fn ->
       :file.script(script, eval_binds(CONFIG: config, SCRIPT: script))
     end)
+
     case result do
       { :ok, config } ->
         config

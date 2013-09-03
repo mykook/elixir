@@ -1,5 +1,5 @@
 defmodule ExUnit.CaptureIO do
-  @moduledoc %B"""
+  @moduledoc %S"""
   This module provides functionality to capture IO to test it.
 
   ## Examples
@@ -137,7 +137,7 @@ defmodule ExUnit.CaptureIO do
   end
 
   defp register_input(input) do
-    chars = :unicode.characters_to_list(input)
+    chars = String.to_char_list!(input)
     set_input(chars)
   end
 
@@ -288,10 +288,10 @@ defmodule ExUnit.CaptureIO do
         case rest do
           [] ->
             set_input([])
-            :unicode.characters_to_binary(line)
+            String.from_char_list!(line)
           [_|t] ->
             set_input(t)
-            :unicode.characters_to_binary(line ++ '\n')
+            String.from_char_list!(line) <> "\n"
         end
     end
   end
@@ -305,7 +305,7 @@ defmodule ExUnit.CaptureIO do
       _ ->
         { chars, rest } = Enum.split(input, n)
         set_input(rest)
-        :unicode.characters_to_binary(chars)
+        String.from_char_list!(chars)
     end
   end
 
@@ -353,11 +353,7 @@ defmodule ExUnit.CaptureIO do
     nil
   end
 
-  defp buffer_to_result([bin]) when is_binary(bin) do
-    bin
-  end
-
   defp buffer_to_result(buf) do
-    buf |> :lists.reverse |> list_to_binary
+    buf |> :lists.reverse |> iolist_to_binary
   end
 end

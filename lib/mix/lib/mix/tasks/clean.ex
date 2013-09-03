@@ -1,7 +1,5 @@
 defmodule Mix.Tasks.Clean do
   use Mix.Task
-  alias Mix.Tasks.Compile.Leex
-  alias Mix.Tasks.Compile.Yecc
 
   @shortdoc "Clean generated application files"
   @recursive true
@@ -15,7 +13,7 @@ defmodule Mix.Tasks.Clean do
 
   """
   def run(args) do
-    { opts, _ } = OptionParser.parse(args)
+    { opts, _, _ } = OptionParser.parse(args)
 
     manifests = Mix.Tasks.Compile.manifests
     Enum.each(manifests, fn(manifest) ->
@@ -26,6 +24,6 @@ defmodule Mix.Tasks.Clean do
 
     File.rm_rf(Mix.project[:compile_path])
 
-    if opts[:all], do: Mix.Task.run("deps.clean")
+    if opts[:all], do: Mix.Task.run("deps.clean", args)
   end
 end

@@ -1,5 +1,5 @@
 defmodule Record do
-  @moduledoc %B"""
+  @moduledoc %S"""
   Convenience functions for working with Records.
 
   A record is a tagged tuple which contains one or more elements
@@ -147,7 +147,7 @@ defmodule Record do
   whenever you want to share a record within your code or with other
   libraries or whenever you need to dynamically set or update fields.
 
-  You can learn more about records in the `Kernel.defrecord/2` docs. Now
+  You can learn more about records in the `Kernel.defrecord/3` docs. Now
   let's discuss the usefulness of combining records with protocols.
 
   ## Protocols
@@ -161,18 +161,18 @@ defmodule Record do
       defrecord WeekDate, year: nil, week: nil, week_day: nil
 
   Now we want this date to be represented as a string and this
-  can be done by implementing the `Binary.Chars` protocol for
+  can be done by implementing the `String.Chars` protocol for
   our record:
 
-      defimpl Binary.Chars, for: WeekDate do
-        def to_binary(WeekDate[year: year, week: week, week_day: day]) do
+      defimpl String.Chars, for: WeekDate do
+        def to_string(WeekDate[year: year, week: week, week_day: day]) do
           "#{year}-W#{week}-#{day}"
         end
       end
 
   Now we can explicitly convert our WeekDate:
 
-      to_binary WeekDate[year: 2013, week: 26, week_day: 4]
+      to_string WeekDate[year: 2013, week: 26, week_day: 4]
       "2013-W26-4"
 
   A protocol can be implemented for any record defined via `defrecord`.
@@ -822,16 +822,35 @@ defmodule Record do
 
   defp convert_value(atom) when is_atom(atom), do: { atom, nil }
 
-  defp convert_value({ atom, other }) when is_atom(atom) and is_function(other), do:
-    raise(ArgumentError, message: "record field default value #{inspect atom} cannot be a function")
-
-  defp convert_value({ atom, other }) when is_atom(atom) and (is_reference(other) or is_pid(other) or is_port(other)), do:
-    raise(ArgumentError, message: "record field default value #{inspect atom} cannot be a reference, pid or port")
-
-  defp convert_value({ atom, _ } = tuple) when is_atom(atom), do: tuple
+  defp convert_value({ atom, other }) when is_atom(atom), do:
+    { atom, check_value(atom, other) }
 
   defp convert_value({ field, _ }), do:
     raise(ArgumentError, message: "record field name has to be an atom, got #{inspect field}")
+
+  defp check_value(atom, other) when is_list(other) do
+    lc(i inlist other, do: check_value(atom, i))
+    other
+  end
+
+  defp check_value(atom, other) when is_tuple(other) do
+    lc(i inlist tuple_to_list(other), do: check_value(atom, i))
+    other
+  end
+
+  defp check_value(atom, other) when is_function(other) do
+    unless :erlang.fun_info(other, :env) == { :env, [] } and
+           :erlang.fun_info(other, :type) == { :type, :external } do
+      raise ArgumentError, message: "record field default value #{inspect atom} can only contain " <>
+                                    "functions that point to an existing &Mod.fun/arity"
+    end
+  end
+
+  defp check_value(atom, other) when is_reference(other) or is_pid(other) or is_port(other) do
+    raise(ArgumentError, message: "record field default value #{inspect atom} cannot contain a reference, pid or port")
+  end
+
+  defp check_value(_atom, other), do: other
 
   defp find_index([{ k, _ }|_], k, i), do: i
   defp find_index([{ _, _ }|t], k, i), do: find_index(t, k, i + 1)

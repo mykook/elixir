@@ -92,13 +92,15 @@ defmodule ListDict do
 
   def split(dict, keys) do
     acc = { new(), new() }
-    Enum.reduce dict, acc, fn({ k, v }, { take, drop }) ->
+    {take, drop} = Enum.reduce dict, acc, fn({ k, v }, { take, drop }) ->
       if :lists.member(k, keys) do
         { [{k, v}|take], drop }
       else
         { take, [{k, v}|drop] }
       end
     end
+    
+    {Enum.reverse(take), Enum.reverse(drop)}
   end
 
   def take(dict, keys) do
@@ -109,15 +111,21 @@ defmodule ListDict do
     lc { k, _ } = tuple inlist dict, not :lists.member(k, keys), do: tuple
   end
 
-  def update([{key, value}|dict], key, fun) do
+  @doc false
+  def update(dict, key, fun) when is_function(fun, 1) do
+    IO.write "ListDict.update/3 is deprecated, please use ListDict.update!/3 instead\n#{Exception.format_stacktrace}"
+    update!(dict, key, fun)
+  end
+
+  def update!([{key, value}|dict], key, fun) do
     [{key, fun.(value)}|delete(dict, key)]
   end
 
-  def update([{_, _} = e|dict], key, fun) do
-    [e|update(dict, key, fun)]
+  def update!([{_, _} = e|dict], key, fun) do
+    [e|update!(dict, key, fun)]
   end
 
-  def update([], key, _fun) do
+  def update!([], key, _fun) do
     raise(KeyError, key: key)
   end
 

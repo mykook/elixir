@@ -18,12 +18,18 @@ defmodule IO do
 
   * A list of binaries or a list of char lists (as described above);
 
-  * If none of the above, `to_binary` is invoked on the
+  * If none of the above, `to_string` is invoked on the
     given argument;
 
   """
 
   import :erlang, only: [group_leader: 0]
+
+  defmacrop is_iolist(data) do
+    quote do
+      is_list(unquote(data)) or is_binary(unquote(data))
+    end
+  end
 
   @doc """
   Reads `count` characters from the IO device or until
@@ -92,8 +98,8 @@ defmodule IO do
       #=> "error"
 
   """
-  def write(device // group_leader(), item) do
-    :io.put_chars map_dev(device), to_iodata(item)
+  def write(device // group_leader(), item) when is_iolist(item) do
+    :io.put_chars map_dev(device), item
   end
 
   @doc """
@@ -102,8 +108,8 @@ defmodule IO do
 
   Check `write/2` for more information.
   """
-  def binwrite(device // group_leader(), item) do
-    :file.write map_dev(device), to_iodata(item)
+  def binwrite(device // group_leader(), item) when is_iolist(item) do
+    :file.write map_dev(device), item
   end
 
   @doc """
@@ -111,9 +117,9 @@ defmodule IO do
   but adds a newline at the end. The argument is expected
   to be a chardata.
   """
-  def puts(device // group_leader(), item) do
+  def puts(device // group_leader(), item) when is_iolist(item) do
     erl_dev = map_dev(device)
-    :io.put_chars erl_dev, [to_iodata(item), ?\n]
+    :io.put_chars erl_dev, [item, ?\n]
   end
 
   @doc """
@@ -182,7 +188,7 @@ defmodule IO do
   Otherwise, `count` is the number of raw bytes to be retrieved.
   """
   def getn(device, prompt, count) do
-    :io.get_chars(map_dev(device), to_iodata(prompt), count)
+    :io.get_chars(map_dev(device), prompt, count)
   end
 
   @doc """
@@ -198,26 +204,33 @@ defmodule IO do
     NFS file system.
   """
   def gets(device // group_leader(), prompt) do
-    :io.get_line(map_dev(device), to_iodata(prompt))
+    :io.get_line(map_dev(device), prompt)
   end
 
   @doc """
   Converts the io device into a Stream. The device is
-  iterated line by line.
+  iterated line by line if :line is given or by a given
+  number of codepoints.
 
   This reads the io as utf-8. Check out
-  `IO.binstream/1` to handle the IO as a raw binary.
+  `IO.binstream/2` to handle the IO as a raw binary.
 
   ## Examples
 
   Here is an example on how we mimic an echo server
   from the command line:
 
-      Enum.each IO.stream(:stdio), IO.write(&1)
+      Enum.each IO.stream(:stdio, :line), IO.write(&1)
 
   """
+  def stream(device, line_or_bytes) do
+    stream(map_dev(device), line_or_bytes, &1, &2)
+  end
+
+  @doc false
   def stream(device) do
-    stream(map_dev(device), &1, &2)
+    IO.write "IO.stream(device) is deprecated, please use IO.stream(device, :line) instead\n#{Exception.format_stacktrace}"
+    stream(device, :line)
   end
 
   @doc """
@@ -226,31 +239,37 @@ defmodule IO do
 
   This reads the io as a raw binary.
   """
-  def binstream(device) do
-    binstream(map_dev(device), &1, &2)
+  def binstream(device, line_or_bytes) do
+    binstream(map_dev(device), line_or_bytes, &1, &2)
   end
 
   @doc false
-  def stream(device, acc, fun) do
-    case read(device, :line) do
+  def binstream(device) do
+    IO.write "IO.binstream(device) is deprecated, please use IO.binstream(device, :line) instead\n#{Exception.format_stacktrace}"
+    binstream(device, :line)
+  end
+
+  @doc false
+  def stream(device, what, acc, fun) do
+    case read(device, what) do
       :eof ->
         acc
       { :error, reason } ->
         raise File.IteratorError, reason: reason
       data ->
-        stream(device, fun.(data, acc), fun)
+        stream(device, what, fun.(data, acc), fun)
     end
   end
 
   @doc false
-  def binstream(device, acc, fun) do
-    case binread(device, :line) do
+  def binstream(device, what, acc, fun) do
+    case binread(device, what) do
       :eof ->
         acc
       { :error, reason } ->
         raise File.IteratorError, reason: reason
       data ->
-        binstream(device, fun.(data, acc), fun)
+        binstream(device, what, fun.(data, acc), fun)
     end
   end
 
@@ -258,7 +277,4 @@ defmodule IO do
   defp map_dev(:stdio),  do: :standard_io
   defp map_dev(:stderr), do: :standard_error
   defp map_dev(other),   do: other
-
-  defp to_iodata(io) when is_list(io) or is_binary(io), do: io
-  defp to_iodata(other), do: to_binary(other)
 end

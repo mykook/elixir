@@ -148,6 +148,15 @@ defmodule RecordTest do
     assert RecordTest.FileInfo.Helper.size(RecordTest.FileInfo.new(size: 100)) == 100
   end
 
+  test :record_with_functions_as_defaults do
+    defrecord WithFun, fun: [&Kernel.is_atom/1]
+    assert WithFun.new.fun == [&Kernel.is_atom/1]
+
+    assert_raise ArgumentError, "record field default value :bar can only contain functions that point to an existing &Mod.fun/arity", fn ->
+      defrecord Foo, bar: [fn x -> x end]
+    end
+  end
+
   test :extract_with_nested_records do
     namespace = Record.extract(:xmlElement, from_lib: "xmerl/include/xmerl.hrl")[:namespace]
     assert is_record(namespace, :xmlNamespace)

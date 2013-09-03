@@ -1,5 +1,5 @@
 #!/bin/sh
-if [ $# -gt 0 ] && ([ $1 = "--help" ] || [ $1 = "-h" ]); then
+if [ $# -gt 0 ] && ([ "$1" = "--help" ] || [ "$1" = "-h" ]); then
   echo "Usage: `basename $0` [options] [.exs file] [data]
 
   -v                Prints version
@@ -38,4 +38,4 @@ readlink_f () {
 
 SELF=$(readlink_f "$0")
 SCRIPT_PATH=$(dirname "$SELF")
-ELIXIR_NO_CLI=1 exec "$SCRIPT_PATH"/elixir --no-halt --erl "-user Elixir.IEx.CLI" +iex "$@"
+ELIXIR_NO_CLI=1 exec "$SCRIPT_PATH"/elixir --no-halt --erl "-nouser -s Elixir.IEx.CLI" +iex "$@"

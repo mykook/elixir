@@ -97,32 +97,35 @@ defmodule Stream do
 
   defimpl Enumerable, for: Lazy do
     def reduce(Lazy[] = lazy, acc, fun) do
-      do_reduce(lazy, acc, fun)
+      do_reduce(lazy, acc, fun, 0)
     end
 
     def count(Lazy[] = lazy) do
-      do_reduce(lazy, 0, fn _, acc -> acc + 1 end)
+      do_reduce(lazy, 0, fn _, acc -> acc + 1 end, 0)
     end
 
     def member?(Lazy[] = lazy, value) do
       do_reduce(lazy, false, fn(entry, _) ->
-        if entry === value, do: throw({ :stream_lazy, true }), else: false
-      end)
+        if entry === value, do: throw({ :stream_lazy, 0, true }), else: false
+      end, 0)
     end
 
-    defp do_reduce(Lazy[enumerable: enumerable, fun: f1, acc: nil], acc, fun) do
-      do_reduce(enumerable, acc, f1.(fun))
+    defp do_reduce(Lazy[enumerable: enumerable, fun: f1, acc: nil], acc, fun, nesting) do
+      do_reduce(enumerable, acc, f1.(fun), nesting)
     end
 
-    defp do_reduce(Lazy[enumerable: enumerable, fun: f1, acc: side], acc, fun) do
-      do_reduce(enumerable, { acc, side }, f1.(fun)) |> elem(0)
+    defp do_reduce(Lazy[enumerable: enumerable, fun: f1, acc: side], acc, fun, nesting) do
+      do_reduce(enumerable, { acc, side }, f1.(fun, nesting), nesting + 1)
     end
 
-    defp do_reduce(enumerable, acc, fun) do
-      Enumerable.reduce(enumerable, acc, fun)
+    defp do_reduce(enumerable, acc, fun, nesting) do
+      Enumerable.reduce(enumerable, acc, fun) |> remove_nesting(nesting)
     catch
-      { :stream_lazy, acc } -> acc
+      { :stream_lazy, nesting, res } -> remove_nesting(res, nesting)
     end
+
+    defp remove_nesting(acc, 0),       do: acc
+    defp remove_nesting(acc, nesting), do: remove_nesting(elem(acc, 0), nesting - 1)
   end
 
   @type t :: Lazy.t | (acc, (element, acc -> acc) -> acc)
@@ -130,6 +133,46 @@ defmodule Stream do
   @type element :: any
   @type index :: non_neg_integer
   @type default :: any
+
+  @doc """
+  Creates a stream that enumerates each enumerable in an enumerable.
+
+  ## Examples
+
+      iex> stream = Stream.concat([1..3, 4..6, 7..9])
+      iex> Enum.to_list(stream)
+      [1,2,3,4,5,6,7,8,9]
+
+  """
+  @spec concat(Enumerable.t) :: t
+  def concat(enumerables) do
+    &do_concat(enumerables, &1, &2)
+  end
+
+  @doc """
+  Creates a stream that enumerates the first argument, followed by the second.
+
+  ## Examples
+
+      iex> stream = Stream.concat(1..3, 4..6)
+      iex> Enum.to_list(stream)
+      [1,2,3,4,5,6]
+
+      iex> stream1 = Stream.cycle([1, 2, 3])
+      iex> stream2 = Stream.cycle([4, 5, 6])
+      iex> stream = Stream.concat(stream1, stream2)
+      iex> Enum.take(stream, 6)
+      [1,2,3,1,2,3]
+
+  """
+  @spec concat(Enumerable.t, Enumerable.t) :: t
+  def concat(first, second) do
+    &do_concat([first, second], &1, &2)
+  end
+
+  defp do_concat(enumerables, acc, fun) do
+    Enumerable.reduce(enumerables, acc, &Enumerable.reduce(&1, &2, fun))
+  end
 
   @doc """
   Creates a stream that cycles through the given enumerable,
@@ -165,7 +208,7 @@ defmodule Stream do
   @spec drop(Enumerable.t, non_neg_integer) :: t
   def drop(enumerable, n) when n >= 0 do
     Lazy[enumerable: enumerable,
-         fun: fn(f1) ->
+         fun: fn(f1, _) ->
            fn
              _entry, { acc, n } when n > 0 ->
                { acc, n - 1 }
@@ -190,7 +233,7 @@ defmodule Stream do
   @spec drop_while(Enumerable.t, (element -> as_boolean(term))) :: t
   def drop_while(enumerable, f) do
     Lazy[enumerable: enumerable,
-         fun: fn(f1) ->
+         fun: fn(f1, _) ->
            fn
              entry, { acc, true } ->
                if f.(entry), do: { acc, true }, else: { f1.(entry, acc), false }
@@ -267,6 +310,28 @@ defmodule Stream do
   end
 
   @doc """
+  Creates a stream that will apply the given function on enumeration and
+  flatten the result.
+
+  ## Examples
+
+      iex> stream = Stream.flat_map([1, 2, 3], fn(x) -> [x, x * 2] end)
+      iex> Enum.to_list(stream)
+      [1, 2, 2, 4, 3, 6]
+
+  """
+
+  @spec flat_map(Enumerable.t, (element -> any)) :: t
+  def flat_map(enumerable, f) do
+    Lazy[enumerable: enumerable,
+         fun: fn(f1) ->
+           fn(entry, acc) ->
+             Enumerable.reduce(f.(entry), acc, f1)
+           end
+         end]
+  end
+
+  @doc """
   Creates a stream that will reject elements according to
   the given function on enumeration.
 
@@ -327,10 +392,10 @@ defmodule Stream do
 
   def take(enumerable, n) when n > 0 do
     Lazy[enumerable: enumerable,
-         fun: fn(f1) ->
+         fun: fn(f1, nesting) ->
            fn(entry, { acc, n }) ->
-             acc = { f1.(entry, acc), n-1 }
-             if n > 1, do: acc, else: throw { :stream_lazy, acc }
+             res = f1.(entry, acc)
+             if n > 1, do: { res, n-1 }, else: throw { :stream_lazy, nesting, res }
            end
          end,
          acc: n]
@@ -350,12 +415,12 @@ defmodule Stream do
   @spec take_while(Enumerable.t, (element -> as_boolean(term))) :: t
   def take_while(enumerable, f) do
     Lazy[enumerable: enumerable,
-         fun: fn(f1) ->
+         fun: fn(f1, nesting) ->
            fn(entry, { acc, true }) ->
              if f.(entry) do
                { f1.(entry, acc), true }
              else
-               throw { :stream_lazy, { acc, false } }
+               throw { :stream_lazy, nesting, acc }
              end
            end
          end,
@@ -376,10 +441,10 @@ defmodule Stream do
   @spec with_index(Enumerable.t) :: t
   def with_index(enumerable) do
     Lazy[enumerable: enumerable,
-         fun: fn(f1) ->
+         fun: fn(f1, _) ->
            fn(entry, { acc, counter }) ->
              acc = f1.({ entry, counter }, acc)
-             { acc, counter + 1}
+             { acc, counter + 1 }
            end
          end,
          acc: 0]

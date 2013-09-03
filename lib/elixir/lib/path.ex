@@ -43,7 +43,7 @@ defmodule Path do
 
   @doc """
   Builds a path from `relative_to` to `path`. If `path` is already
-  an absolute path, `relative_to` is ignored. See also `relative/2`.
+  an absolute path, `relative_to` is ignored. See also `relative_to/2`.
 
   Unlike `expand/2`, no attempt is made to
   resolve `..`, `.` or `~`.
@@ -237,6 +237,18 @@ defmodule Path do
   end
 
   @doc """
+  Convenience to get the path relative to the current working
+  directory. If, for some reason, the current working directory
+  cannot be retrieved, returns the full path.
+  """
+  def relative_to_cwd(path) do
+    case :file.get_cwd do
+      { :ok, base } -> relative_to(path, base)
+      _ -> path
+    end
+  end
+
+  @doc """
   Returns the last component of the path or the path
   itself if it does not contain any directory separators.
 
@@ -397,7 +409,7 @@ defmodule Path do
   defp do_join(<<?/, rest :: binary>>, relativename, [?/|result], os_type), do:
     do_join(rest, relativename, [?/|result], os_type)
   defp do_join(<<>>, <<>>, result, os_type), do:
-    list_to_binary(maybe_remove_dirsep(result, os_type))
+    iolist_to_binary(maybe_remove_dirsep(result, os_type))
   defp do_join(<<>>, relativename, [?:|rest], :win32), do:
     do_join(relativename, <<>>, [?:|rest], :win32)
   defp do_join(<<>>, relativename, [?/|result], os_type), do:
@@ -471,8 +483,9 @@ defmodule Path do
 
   """
   def wildcard(glob) when is_binary(glob) do
-    paths = :filelib.wildcard :unicode.characters_to_list(glob)
-    Enum.map paths, :unicode.characters_to_binary(&1)
+    paths = :filelib.wildcard binary_to_filename_string(glob)
+    encoding = :file.native_name_encoding()
+    Enum.map paths, &flatten_filename_to_binary(&1, encoding)
   end
 
   def wildcard(glob) when is_list(glob) do
@@ -494,7 +507,11 @@ defmodule Path do
   end
 
   defp filename_string_to_binary(list) do
-    case :unicode.characters_to_binary(:filename.flatten(list), :unicode, :file.native_name_encoding()) do
+    flatten_filename_to_binary(:filename.flatten(list), :file.native_name_encoding())
+  end
+
+  defp flatten_filename_to_binary(list, encoding) do
+    case :unicode.characters_to_binary(list, :unicode, encoding) do
       { :error, _, _ } ->
         :erlang.error(:badarg)
       bin when is_binary(bin) ->

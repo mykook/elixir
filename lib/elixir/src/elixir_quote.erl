@@ -154,14 +154,6 @@ do_quote({ '&', Meta, [{ '/', _, [{F, _, C}, A]}] = Args },
     #elixir_quote{imports_hygiene=true} = Q, S) when is_atom(F), is_integer(A), is_atom(C) ->
   do_quote_fa('&', Meta, Args, F, A, Q, S);
 
-do_quote({ function, Meta, [{ '/', _, [{F, _, C}, A]}] = Args },
-    #elixir_quote{imports_hygiene=true} = Q, S) when is_atom(F), is_integer(A), is_atom(C) ->
-  do_quote_fa(function, Meta, Args, F, A, Q, S);
-
-do_quote({ { '.', _, [_, function] } = Target, Meta, [{ '/', _, [{F, _, C}, A]}] = Args },
-    #elixir_quote{imports_hygiene=true} = Q, S) when is_atom(F), is_integer(A), is_atom(C) ->
-  do_quote_fa(Target, Meta, Args, F, A, Q, S);
-
 do_quote({ Name, Meta, ArgsOrAtom }, #elixir_quote{imports_hygiene=true} = Q, S) when is_atom(Name) ->
   Arity = case is_atom(ArgsOrAtom) of
     true  -> 0;
@@ -203,8 +195,18 @@ do_quote(Tuple, #elixir_quote{escape=true} = Q, S) when is_tuple(Tuple) ->
   { TT, TQ } = do_quote(tuple_to_list(Tuple), Q, S),
   { { '{}', [], TT }, TQ };
 
+do_quote(List, #elixir_quote{escape=true} = Q, S) when is_list(List) ->
+  % The improper case is pretty inefficient, but improper lists are hopefully
+  % rare.
+  case reverse_improper(List) of
+    { L }       -> do_splice(L, Q, S);
+    { L, R }    ->
+      { TL, QL } = do_splice(L, Q, S, [], []),
+      { TR, QR } = do_quote(R, QL, S),
+      { update_last(TL, fun(X) -> { '|', [], [X, TR] } end), QR }
+  end;
 do_quote(List, Q, S) when is_list(List) ->
-  do_splice(lists:reverse(List), Q, S);
+    do_splice(lists:reverse(List), Q, S);
 
 do_quote(Other, Q, _) ->
   { Other, Q }.
@@ -236,6 +238,16 @@ meta(Meta, #elixir_quote{line=nil}) ->
   keydelete(line, Meta);
 meta(Meta, #elixir_quote{line=Line}) ->
   keystore(line, Meta, Line).
+
+reverse_improper(L) -> reverse_improper(L, []).
+
+reverse_improper([], Acc) -> { Acc };
+reverse_improper([H|T], Acc) when is_list(T) -> reverse_improper(T, [H|Acc]);
+reverse_improper([H|T], Acc) -> { [H|Acc], T }.
+
+update_last([], _) -> [];
+update_last([H], F) -> [F(H)];
+update_last([H|T], F) -> [H|update_last(T,F)].
 
 keyfind(Key, Meta) ->
   lists:keyfind(Key, 1, Meta).

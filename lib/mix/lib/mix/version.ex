@@ -1,5 +1,5 @@
 defmodule Mix.Version do
-  @moduledoc %B"""
+  @moduledoc %S"""
   This module provides functions for parsing and matching
   versions with requirements.
 
@@ -269,7 +269,7 @@ defmodule Mix.Version do
 
           { :error, errors } ->
             { :error, Enum.map(errors, fn { :error, reason } ->
-              to_binary(reason)
+              to_string(reason)
             end) }
         end
       else
@@ -277,14 +277,17 @@ defmodule Mix.Version do
       end
     end
 
+    defp nillify(""), do: nil
+    defp nillify(o),  do: o
+
     @spec parse_version(String.t) :: { :ok, Mix.Version.matchable } | { :error, :invalid_version }
     def parse_version(string) when is_binary(string) do
       if valid_version?(string) do
         destructure [_, major, minor, patch, pre], Regex.run(@version_regex, string)
 
         major = binary_to_integer(major)
-        minor = binary_to_integer(minor || "0")
-        patch = binary_to_integer(patch || "0")
+        minor = binary_to_integer(minor |> nillify || "0")
+        patch = binary_to_integer(patch |> nillify || "0")
         pre   = pre && parse_pre(pre) || []
 
         { :ok, { major, minor, patch, pre } }
@@ -296,7 +299,7 @@ defmodule Mix.Version do
     @doc false
     def parse_pre(pre) do
       String.split(pre, ".") |> Enum.map fn piece ->
-        if piece =~ %r/^[1-9][0-9]*$/ do
+        if piece =~ %r/^(0|[1-9][0-9]*)$/ do
           binary_to_integer(piece)
         else
           piece
@@ -399,24 +402,56 @@ defmodule Mix.Version do
       from = Mix.Version.parse(version)
       to   = approximate(version)
 
-      { :andalso, to_condition([:'>=', to_binary(from)]),
-                  to_condition([:'<', to_binary(to)]) }
+      { :andalso, to_condition([:'>=', to_string(from)]),
+                  to_condition([:'<', to_string(to)]) }
     end
 
     defp to_condition([:'>', version | _]) do
-      matchspec(version, :'>', :<)
+      { major, minor, patch, pre } = Mix.Version.to_matchable(version)
+
+      { :andalso, { :not, { :is_binary, :'$1' } },
+                  { :orelse, { :'>', {{ :'$1', :'$2', :'$3' }},
+                                     { :const, { major, minor, patch } } },
+                             { :andalso, { :'==', {{ :'$1', :'$2', :'$3' }},
+                                                  { :const, { major, minor, patch } } },
+                             { :orelse, { :andalso, { :'==', { :length, :'$4' }, 0 },
+                                                    { :'/=', length(pre), 0 } },
+                                        { :andalso, { :'/=', length(pre), 0 },
+                                                    { :orelse, { :'>', { :length, :'$4' }, length(pre) },
+                                                               { :andalso, { :'==', { :length, :'$4' }, length(pre) },
+                                                                           { :'>', :'$4', { :const, pre } } } } } } } } }
     end
 
     defp to_condition([:'>=', version | _]) do
-      matchspec(version, :'>=', :<)
+      matchable = Mix.Version.to_matchable(version)
+
+      { :orelse, { :andalso, { :not, { :is_binary, :'$1' } },
+                             { :'==', :'$_', { :const, matchable } } },
+                 to_condition([:'>', version]) }
     end
 
     defp to_condition([:'<', version | _]) do
-      matchspec(version, :'<', :>)
+      { major, minor, patch, pre } = Mix.Version.to_matchable(version)
+
+      { :andalso, { :not, { :is_binary, :'$1' } },
+                  { :orelse, { :'<', {{ :'$1', :'$2', :'$3' }},
+                                     { :const, { major, minor, patch } } },
+                             { :andalso, { :'==', {{ :'$1', :'$2', :'$3' }},
+                                                  { :const, { major, minor, patch } } },
+                             { :orelse, { :andalso, { :'/=', { :length, :'$4' }, 0 },
+                                                    { :'==', length(pre), 0 } },
+                                        { :andalso, { :'/=', { :length, :'$4' }, 0 },
+                                                    { :orelse, { :'<', { :length, :'$4' }, length(pre) },
+                                                               { :andalso, { :'==', { :length, :'$4' }, length(pre) },
+                                                                           { :'<', :'$4', { :const, pre } } } } } } } } }
     end
 
     defp to_condition([:'<=', version | _]) do
-      matchspec(version, :'=<', :>)
+      matchable = Mix.Version.to_matchable(version)
+
+      { :orelse, { :andalso, { :not, { :is_binary, :'$1' } },
+                             { :'==', :'$_', { :const, matchable } } },
+                 to_condition([:'<', version]) }
     end
 
     defp to_condition(current, []) do
@@ -430,35 +465,23 @@ defmodule Mix.Version do
     defp to_condition(current, [:'||', operator, version | rest]) do
       to_condition({ :orelse, current, to_condition([operator, version]) }, rest)
     end
-
-    defp matchspec(version, comp_op, length_op) do
-      { major, minor, patch, pre } = Mix.Version.to_matchable(version)
-
-      { :andalso, { :not, { :is_binary, :'$1' } },
-                  { :orelse, { comp_op, {{ :'$1', :'$2', :'$3' }},
-                                      { :const, { major, minor, patch } } },
-                             { :andalso, { :'==', {{ :'$1', :'$2', :'$3' }},
-                                                  { :const, { major, minor, patch } } },
-                                         { :orelse, { length_op, { :length, :'$4' }, { :const, length(pre) } },
-                                                    { comp_op, :'$4', { :const, pre } } } } } }
-    end
   end
 end
 
-defimpl Binary.Chars, for: Mix.Version.Schema do
-  def to_binary(Mix.Version.Schema[source: source]) do
+defimpl String.Chars, for: Mix.Version.Schema do
+  def to_string(Mix.Version.Schema[source: source]) do
     source
   end
 end
 
 defimpl Inspect, for: Mix.Version.Schema do
   def inspect(self, _opts) do
-    "#Mix.Version.Schema<" <> to_binary(self) <> ">"
+    "#Mix.Version.Schema<" <> to_string(self) <> ">"
   end
 end
 
-defimpl Binary.Chars, for: Mix.Version.Requirement do
-  def to_binary({ _, source, _ }) do
+defimpl String.Chars, for: Mix.Version.Requirement do
+  def to_string({ _, source, _ }) do
     source
   end
 end

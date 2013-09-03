@@ -53,7 +53,7 @@ defmodule Mix.Deps.Retriever do
       # The manager must be nil because mix supports mix,
       # rebar and make dependencies/managers.
       (Mix.project[:deps] || []) |> Enum.map(update(&1, scms, from))
-    end) |> List.concat
+    end) |> Enum.concat
   end
 
   defp rebar_children(dir) do
@@ -63,7 +63,7 @@ defmodule Mix.Deps.Retriever do
 
       # Rebar dependencies are always managed by rebar.
       Mix.Rebar.deps(config) |> Enum.map(update(&1, scms, from, :rebar))
-    end) |> List.concat
+    end) |> Enum.concat
   end
 
   defp update(tuple, scms, from, manager // nil) do
@@ -189,7 +189,7 @@ defmodule Mix.Deps.Retriever do
       { :ok, [{ :application, ^app, config }] } ->
         case List.keyfind(config, :vsn, 0) do
           { :vsn, actual } when is_list(actual) ->
-            actual = list_to_binary(actual)
+            actual = iolist_to_binary(actual)
             if vsn_match?(req, actual) do
               { :ok, actual }
             else
@@ -230,7 +230,7 @@ defmodule Mix.Deps.Retriever do
   end
 
   defp invalid_dep_format(dep) do
-    raise Mix.Error, message: %b(Dependency specified in the wrong format: #{inspect dep}, ) <>
-      %b(expected { app :: atom, opts :: Keyword.t } | { app :: atom, requirement :: String.t, opts :: Keyword.t })
+    raise Mix.Error, message: %s(Dependency specified in the wrong format: #{inspect dep}, ) <>
+      %s(expected { app :: atom, opts :: Keyword.t } | { app :: atom, requirement :: String.t, opts :: Keyword.t })
   end
 end

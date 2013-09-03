@@ -29,9 +29,13 @@ defmodule StringTest do
     assert String.split("a,b,c", ",") == ["a", "b", "c"]
     assert String.split("a,b", ".") == ["a,b"]
     assert String.split("1,2 3,4", [" ", ","]) == ["1", "2", "3", "4"]
+    assert String.split(" a b c ", " ") == ["", "a", "b", "c", ""]
 
     assert String.split("a,b,c", ",", global: false) == ["a", "b,c"]
     assert String.split("1,2 3,4", [" ", ","], global: false) == ["1", "2 3,4"]
+
+    assert String.split(" a b c ", " ", trim: true) == ["a", "b", "c"]
+    assert String.split(" a b c ", " ", trim: true, global: false) == ["a b c "]
   end
 
   test :split_with_regex do
@@ -39,6 +43,8 @@ defmodule StringTest do
     assert String.split("a,b", %r{,}) == ["a", "b"]
     assert String.split("a,b,c", %r{,}) == ["a", "b", "c"]
     assert String.split("a,b,c", %r{,}, global: false) == ["a", "b,c"]
+    assert String.split("a,b.c ", %r{\W}) == ["a", "b", "c", ""]
+    assert String.split("a,b.c ", %r{\W}, trim: false) == ["a", "b", "c", ""]
     assert String.split("a,b", %r{\.}) == ["a,b"]
   end
 
@@ -100,6 +106,7 @@ defmodule StringTest do
     assert String.rstrip("a  abc  a" <> <<194, 133>>) == "a  abc  a"
     assert String.rstrip("   abc aa", ?a) == "   abc "
     assert String.rstrip("   abc __", ?_) == "   abc "
+    assert String.rstrip("   cat 猫猫", ?猫) == "   cat "
   end
 
   test :lstrip do
@@ -111,6 +118,7 @@ defmodule StringTest do
     assert String.lstrip(<<31>> <> " a  abc  a") == "a  abc  a"
     assert String.lstrip(<<194, 133>> <> "a  abc  a") == "a  abc  a"
     assert String.lstrip("__  abc  _", ?_) == "  abc  _"
+    assert String.lstrip("猫猫 cat   ", ?猫) == " cat   "
   end
 
   test :strip do
@@ -119,6 +127,25 @@ defmodule StringTest do
     assert String.strip("a  abc  a\n\n") == "a  abc  a"
     assert String.strip("a  abc  a\t\n\v\f\r\s") == "a  abc  a"
     assert String.strip("___  abc  ___", ?_) == "  abc  "
+    assert String.strip("猫猫猫  cat  猫猫猫", ?猫) == "  cat  "
+  end
+
+  test :rjust do
+    assert String.rjust("", 5) == "     "
+    assert String.rjust("abc", 5) == "  abc"
+    assert String.rjust("  abc  ", 9) == "    abc  "
+    assert String.rjust("猫", 5) == "    猫"
+    assert String.rjust("abc", 5, ?-) == "--abc"
+    assert String.rjust("abc", 5, ?猫) == "猫猫abc"
+  end
+
+  test :ljust do
+    assert String.ljust("", 5) == "     "
+    assert String.ljust("abc", 5) == "abc  "
+    assert String.ljust("  abc  ", 9) == "  abc    "
+    assert String.ljust("猫", 5) == "猫    "
+    assert String.ljust("abc", 5, ?-) == "abc--"
+    assert String.ljust("abc", 5, ?猫) == "abc猫猫"
   end
 
   test :reverse do
@@ -141,6 +168,9 @@ defmodule StringTest do
     assert String.replace("a,b,c", ",", "[]", insert_replaced: 2) == "a[],b[],c"
     assert String.replace("a,b,c", ",", "[]", insert_replaced: [1, 1]) == "a[,,]b[,,]c"
     assert String.replace("a,b,c", "b", "[]", insert_replaced: 1, global: false) == "a,[b],c"
+
+    assert String.replace("a,b,c", %r/,(.)/, ",\\1\\1") == "a,bb,cc"
+    assert String.replace("a,b,c", %r/,(.)/, ",\\1\\1", global: false) == "a,bb,c"
   end
 
   test :duplicate do
@@ -243,6 +273,9 @@ defmodule StringTest do
     assert String.slice("あいうえお", 6, 2) == nil
     assert String.slice("ειξήριολ", 8, 1) == ""
     assert String.slice("ειξήριολ", 9, 1) == nil
+    assert String.slice("elixir", 0, 0) == ""
+    assert String.slice("elixir", 5, 0) == ""
+    assert String.slice("elixir", -5, 0) == ""
     assert String.slice("", 0, 1) == ""
     assert String.slice("", 1, 1) == nil
   end

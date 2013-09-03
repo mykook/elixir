@@ -6,6 +6,10 @@ tokenize(String) ->
   { ok, Result } = elixir_tokenizer:tokenize(String, 1, []),
   Result.
 
+tokenize_error(String) ->
+  { error, Error } = elixir_tokenizer:tokenize(String, 1, []),
+  Error.
+
 type_test() ->
   [{number,1,1},{type_op,1,'::'},{number,1,3}] = tokenize("1 :: 3"),
   [{identifier,1,foo},
@@ -40,6 +44,13 @@ unquoted_atom_test() ->
   [{atom, 1, '='}] = tokenize(":="),
   [{atom, 1, '&&'}] = tokenize(":&&").
 
+quoted_atom_test() ->
+  [{atom, 1, 'foo bar'}] = tokenize(":\"foo bar\"").
+
+oversized_atom_test() ->
+  OversizedAtom = ":\"" ++ string:copies("a", 256) ++ "\"",
+  { 1, "atom length must be less than system limit", ":" } = tokenize_error(OversizedAtom).
+
 op_atom_test() ->
   [{atom,1,f0_1}] = tokenize(":f0_1").
 
@@ -63,9 +74,9 @@ comments_test() ->
 
 identifier_test() ->
   [{identifier,1,abc}] = tokenize("abc "),
-  [{punctuated_identifier,1,'abc?'}] = tokenize("abc?"),
-  [{punctuated_identifier,1,'abc!'}] = tokenize("abc!"),
-  [{punctuated_identifier,1,'a0c!'}] = tokenize("a0c!"),
+  [{identifier,1,'abc?'}] = tokenize("abc?"),
+  [{identifier,1,'abc!'}] = tokenize("abc!"),
+  [{identifier,1,'a0c!'}] = tokenize("a0c!"),
   [{paren_identifier,1,'a0c'},{'(',1},{')',1}] = tokenize("a0c()"),
   [{paren_identifier,1,'a0c!'},{'(',1},{')',1}] = tokenize("a0c!()").
 

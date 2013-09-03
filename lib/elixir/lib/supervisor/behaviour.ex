@@ -103,11 +103,11 @@ defmodule Supervisor.Behaviour do
     Defaults to `:permanent`;
 
   * `:shutdown` - defines how a child process should be terminated.
-    Defaults to `5000`;
+    Defaults to `5000` for a worker and `:infinity` for a supervisor;
 
   * `:modules` - it should be a list with one element `[module]`,
     where module is the name of the callback module only if the
-    child process is a supervisor, gen_server or gen_fsm. If the
+    child process is a supervisor, `gen_server` or `gen_fsm`. If the
     child process is a gen_event, modules should be `:dynamic`.
     Defaults to a list with the given module;
 
@@ -167,6 +167,7 @@ defmodule Supervisor.Behaviour do
   #{@child_doc}
   """
   def supervisor(module, args, options // []) do
+    options = Keyword.update(options, :shutdown, :infinity, fn(x) -> x end)
     child(:supervisor, module, args, options)
   end
 

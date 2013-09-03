@@ -138,7 +138,7 @@ defmodule IO.ANSI do
     raise ArgumentError, message: "invalid ANSI sequence specification: #{spec}"
   end
 
-  @doc %B"""
+  @doc %S"""
   Escapes a string by converting named ANSI sequences into actual ANSI codes.
 
   The format for referring to sequences is `%{red}` and `%{red,bright}` (for
@@ -167,7 +167,7 @@ defmodule IO.ANSI do
     end
   end
 
-  @doc %B"""
+  @doc %S"""
   Escapes a string by converting named ANSI sequences into actual ANSI codes.
 
   The format for referring to sequences is `%{red}` and `%{red,bright}` (for
@@ -208,7 +208,7 @@ defmodule IO.ANSI do
     do_escape(rest, false, emit, emitted, [x|acc])
   end
   defp do_escape("", false, _emit, emitted, acc) do
-    {list_to_binary(Enum.reverse(acc)), emitted}
+    {iolist_to_binary(Enum.reverse(acc)), emitted}
   end
 
   defp do_escape_sequence(rest, emit, acc) do

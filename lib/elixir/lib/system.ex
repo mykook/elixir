@@ -53,7 +53,7 @@ defmodule System do
 
   # Get the date at compilation time.
   defmacrop get_date do
-    list_to_binary :httpd_util.rfc1123_date
+    iolist_to_binary :httpd_util.rfc1123_date
   end
 
   @doc """
@@ -93,7 +93,7 @@ defmodule System do
   """
   def cwd do
     case :file.get_cwd do
-      { :ok, list } -> :unicode.characters_to_binary(list)
+      { :ok, base } -> String.from_char_list!(base)
       _ -> nil
     end
   end
@@ -138,7 +138,7 @@ defmodule System do
     )
   end
 
-  @doc %B"""
+  @doc %S"""
   Returns a writable temporary directory.
   It searches for directories in the following order:
 
@@ -152,9 +152,9 @@ defmodule System do
   """
   def tmp_dir do
     write_env_tmp_dir('TMPDIR') ||
-      write_env_tmp_dir('TEMP')  ||
-      write_env_tmp_dir('TMP') ||
-      write_tmp_dir("/tmp")     ||
+      write_env_tmp_dir('TEMP') ||
+      write_env_tmp_dir('TMP')  ||
+      write_tmp_dir('/tmp')     ||
       ((cwd = cwd()) && write_tmp_dir(cwd))
   end
 
@@ -180,8 +180,9 @@ defmodule System do
         access_index = File.Stat.__record__(:index, :access)
         case { elem(info, type_index), elem(info, access_index) } do
           { :directory, access } when access in [:read_write, :write] ->
-            :unicode.characters_to_binary(dir)
-          _ -> nil
+            String.from_char_list!(dir)
+          _ ->
+            nil
         end
       { :error, _ } -> nil
     end
@@ -217,7 +218,7 @@ defmodule System do
   def cmd(command) when is_binary(command) do
     # Notice we don't use unicode for conversion
     # because the OS is expecting and returning raw bytes
-    list_to_binary :os.cmd(binary_to_list(command))
+    :binary.list_to_bin :os.cmd(:binary.bin_to_list(command))
   end
 
   @doc """
@@ -240,20 +241,23 @@ defmodule System do
   def find_executable(program) when is_binary(program) do
     # Notice we don't use unicode for conversion
     # because the OS is expecting and returning raw bytes
-    case :os.find_executable(binary_to_list(program)) do
+    case :os.find_executable(:binary.bin_to_list(program)) do
       false -> nil
-      other -> list_to_binary(other)
+      other -> :binary.list_to_bin(other)
     end
   end
 
   @doc """
-  Returns a list of all environment variables. Each environment variable is
-  given as a single string of the format "VarName=Value", where VarName is the
-  name of the variable and Value its value.
+  Returns a list of all environment variables. Each variable is given as a
+  `{name, value}` tuple where both `name` and `value` are strings.
   """
-  @spec get_env() :: [{binary, binary}]
+  @spec get_env() :: [{String.t, String.t}]
   def get_env do
-    Enum.map :os.getenv, :unicode.characters_to_binary(&1)
+    Enum.map(:os.getenv, fn var ->
+        var = String.from_char_list! var
+        [k, v] = String.split var, "=", global: false
+        {k, v}
+    end)
   end
 
   @doc """
@@ -263,9 +267,9 @@ defmodule System do
   """
   @spec get_env(binary) :: binary | nil
   def get_env(varname) when is_binary(varname) do
-    case :os.getenv(:unicode.characters_to_list(varname)) do
+    case :os.getenv(String.to_char_list!(varname)) do
       false -> nil
-      other -> :unicode.characters_to_binary(other)
+      other -> String.from_char_list!(other)
     end
   end
 
@@ -276,14 +280,14 @@ defmodule System do
   See http://www.erlang.org/doc/man/os.html#getpid-0 for more info.
   """
   @spec get_pid() :: binary
-  def get_pid, do: list_to_binary(:os.getpid)
+  def get_pid, do: iolist_to_binary(:os.getpid)
 
   @doc """
   Sets a new `value` for the environment variable `varname`.
   """
   @spec put_env(binary, binary) :: :ok
   def put_env(varname, value) when is_binary(varname) and is_binary(value) do
-   :os.putenv binary_to_list(varname), :unicode.characters_to_list(value)
+   :os.putenv :binary.bin_to_list(varname), String.to_char_list!(value)
    :ok
   end
 
@@ -309,8 +313,7 @@ defmodule System do
 
   @doc """
   Halts the Erlang runtime system where the first argument status must be a
-  non-negative integer, the atom `:abort` or any type that can be converted
-  to a char list.
+  non-negative integer, the atom `:abort` or a binary.
 
   * If an integer, the runtime system exits with the integer value which
     is returned to the Operating System;
@@ -342,7 +345,7 @@ defmodule System do
   end
 
   def halt(status) when is_binary(status) do
-    :erlang.halt(binary_to_list(status))
+    :erlang.halt(:binary.bin_to_list(status))
   end
 
   ## Helpers

@@ -479,21 +479,17 @@ defmodule Kernel do
     :erlang.binary_to_existing_atom(binary, encoding)
   end
 
-  @doc """
-  Returns a list of integers which correspond to the bytes of `binary`.
-  """
-  @spec binary_to_list(binary) :: list
+  @doc false
   def binary_to_list(binary) do
+    IO.write "binary_to_list/1 is deprecated. Please use String.to_char_list!/1 instead "
+    IO.write "unless you are working with bytes, then you should use :binary.bin_to_list/1\n#{Exception.format_stacktrace}"
     :erlang.binary_to_list(binary)
   end
 
-  @doc """
-  Like `binary_to_list/1`, but returns a list of integers corresponding to the bytes
-  from position `start` to position `stop` in `binary`. Positions in the binary
-  are numbered starting from 1.
-  """
-  @spec binary_to_list(binary, pos_integer, pos_integer) :: list
+  @doc false
   def binary_to_list(binary, start, stop) do
+    IO.write "binary_to_list/3 is deprecated. Please use String.to_char_list!/1 instead "
+    IO.write "unless you are working with bytes, then you should use :binary.bin_to_list/3\n#{Exception.format_stacktrace}"
     :erlang.binary_to_list(binary, start, stop)
   end
 
@@ -611,7 +607,7 @@ defmodule Kernel do
       '7.00000000000000000000e+00'
 
   """
-  @spec float_to_list(number) :: char_list
+  @spec float_to_list(number) :: list
   def float_to_list(number) do
     :erlang.float_to_list(number)
   end
@@ -633,7 +629,7 @@ defmodule Kernel do
       '7'
 
   """
-  @spec integer_to_list(integer) :: char_list
+  @spec integer_to_list(integer) :: list
   def integer_to_list(number) do
     :erlang.integer_to_list(number)
   end
@@ -648,7 +644,7 @@ defmodule Kernel do
       '3FF'
 
   """
-  @spec integer_to_list(integer, pos_integer) :: char_list
+  @spec integer_to_list(integer, pos_integer) :: list
   def integer_to_list(number, base) do
     :erlang.integer_to_list(number, base)
   end
@@ -670,6 +666,13 @@ defmodule Kernel do
   @doc """
   Returns a binary which is made from the integers and binaries in iolist.
 
+  Notice that this function treats lists of integers as raw bytes 
+  and does not perform any kind of encoding conversion. If you want to convert
+  from a char list to a string (both utf-8 encoded), please use
+  `String.from_char_list!/1` instead.
+
+  If this function receives a binary, the same binary is returned.
+
   ## Examples
 
       iex> bin1 = <<1, 2, 3>>
@@ -678,8 +681,12 @@ defmodule Kernel do
       ...> iolist_to_binary([bin1, 1, [2, 3, bin2], 4|bin3])
       <<1,2,3,1,2,3,4,5,4,6>>
 
+      iex> bin = <<1, 2, 3>>
+      ...> iolist_to_binary(bin)
+      <<1,2,3>>
+
   """
-  @spec iolist_to_binary(iolist) :: binary
+  @spec iolist_to_binary(iolist | binary) :: binary
   def iolist_to_binary(item) do
     :erlang.iolist_to_binary(item)
   end
@@ -854,29 +861,23 @@ defmodule Kernel do
   end
 
   @doc """
-  Returns the atom whose text representation is `char_list`.
+  Returns the atom whose text representation is `list`.
 
   ## Examples
 
       iex> list_to_atom('elixir')
       :elixir
   """
-  @spec list_to_atom(char_list) :: atom
-  def list_to_atom(char_list) do
-    :erlang.list_to_atom(char_list)
+  @spec list_to_atom(list) :: atom
+  def list_to_atom(list) do
+    :erlang.list_to_atom(list)
   end
 
-  @doc """
-  Returns a binary which is made from the content of `char_list`.
-
-  ## Examples
-
-      iex> list_to_binary('Elixir')
-      "Elixir"
-  """
-  @spec list_to_binary(iolist) :: binary
-  def list_to_binary(char_list) do
-    :erlang.list_to_binary(char_list)
+  @doc false
+  def list_to_binary(list) do
+    IO.write "list_to_binary/1 is deprecated. Please use String.from_char_list!/1 instead "
+    IO.write "unless you are working with bytes, then you should use iolist_to_binary/1\n#{Exception.format_stacktrace}"
+    :erlang.list_to_binary(list)
   end
 
   @doc """
@@ -898,55 +899,55 @@ defmodule Kernel do
   end
 
   @doc """
-  Returns the atom whose text representation is `char_list`, but only if there already
-  exists such atom.
+  Returns the atom whose text representation is `list`,
+  but only if there already exists such atom.
   """
-  @spec list_to_existing_atom(char_list) :: atom
-  def list_to_existing_atom(char_list) do
-    :erlang.list_to_existing_atom(char_list)
+  @spec list_to_existing_atom(list) :: atom
+  def list_to_existing_atom(list) do
+    :erlang.list_to_existing_atom(list)
   end
 
   @doc """
-  Returns the float whose text representation is `char_list`.
+  Returns the float whose text representation is `list`.
 
   ## Examples
 
       iex> list_to_float('2.2017764e+0')
       2.2017764
   """
-  @spec list_to_float(char_list) :: float
-  def list_to_float(char_list) do
-    :erlang.list_to_float(char_list)
+  @spec list_to_float(list) :: float
+  def list_to_float(list) do
+    :erlang.list_to_float(list)
   end
 
   @doc """
-  Returns an integer whose text representation is `char_list`.
+  Returns an integer whose text representation is `list`.
 
   ## Examples
 
       iex> list_to_integer('123')
       123
   """
-  @spec list_to_integer(char_list) :: integer
-  def list_to_integer(char_list) do
-    :erlang.list_to_integer(char_list)
+  @spec list_to_integer(list) :: integer
+  def list_to_integer(list) do
+    :erlang.list_to_integer(list)
   end
 
   @doc """
-  Returns an integer whose text representation in base `base` is `char_list`.
+  Returns an integer whose text representation in base `base` is `list`.
 
   ## Examples
 
       iex> list_to_integer('3FF', 16)
       1023
   """
-  @spec list_to_integer(char_list, non_neg_integer) :: integer
-  def list_to_integer(char_list, base) do
-    :erlang.list_to_integer(char_list, base)
+  @spec list_to_integer(list, non_neg_integer) :: integer
+  def list_to_integer(list, base) do
+    :erlang.list_to_integer(list, base)
   end
 
   @doc """
-  Returns a pid whose text representation is `char_list`.
+  Returns a pid whose text representation is `list`.
 
   ## Warning:
 
@@ -959,9 +960,9 @@ defmodule Kernel do
 
       list_to_pid('<0.4.1>') #=> #PID<0.4.1>
   """
-  @spec list_to_pid(char_list) :: pid
-  def list_to_pid(char_list) do
-    :erlang.list_to_pid(char_list)
+  @spec list_to_pid(list) :: pid
+  def list_to_pid(list) do
+    :erlang.list_to_pid(list)
   end
 
   @doc """
@@ -1316,38 +1317,7 @@ defmodule Kernel do
   """
   defmacro def(name, do: contents)
 
-  @doc """
-  This macro allows a function to be defined more explicitly
-  by accepting the name, args and guards as different entries.
-
-  Unlike `def/2`, the macro arguments are evaluated
-  and therefore require quoting.
-
-  The `name` must be an atom, the `arguments` a list where each
-  element represents another argument and `guards` a list of
-  clauses, where each clause is disjunct.
-
-  ## Examples
-
-  The most common mistake when using this macro is to pass the
-  arguments without quoting:
-
-      def :some_function, [first_arg, second_arg], is_list(first_arg) do
-        # ...
-      end
-
-  However, the example above will fail because it will attempt to
-  evaluate `[first_arg, second_arg]` and fail because the variable
-  `first_arg` is not defined. Therefore, we need to use quote:
-
-      name   = :some_function
-      args   = quote(do: [first_arg, second_arg])
-      guards = quote(do: is_list(first_arg))
-      exprs  = quote(do: ...)
-
-      def name, args, guards, do: exprs
-
-  """
+  @doc false
   defmacro def(name, args, guards, do: contents)
 
   @doc """
@@ -1371,9 +1341,7 @@ defmodule Kernel do
   """
   defmacro defp(name, do: contents)
 
-  @doc """
-  The same as `def/4` but generates a private function.
-  """
+  @doc false
   defmacro defp(name, args, guards, do: contents)
 
   @doc """
@@ -1397,9 +1365,7 @@ defmodule Kernel do
   """
   defmacro defmacro(name, do: contents)
 
-  @doc """
-  The same as `def/4` but generates a macro.
-  """
+  @doc false
   defmacro defmacro(name, args, guards, do: contents)
 
   @doc """
@@ -1410,12 +1376,10 @@ defmodule Kernel do
   """
   defmacro defmacrop(name, do: contents)
 
-  @doc """
-  The same as `def/4` but generates a private macro.
-  """
+  @doc false
   defmacro defmacrop(name, args, guards, do: contents)
 
-  @doc %B"""
+  @doc %S"""
   Exports a module with a record definition and runtime operations.
 
   Please see the `Record` module's documentation for an introduction
@@ -1536,7 +1500,7 @@ defmodule Kernel do
     end
   end
 
-  @doc %B"""
+  @doc %S"""
   Defines a set of private macros to manipulate a record definition.
 
   This macro defines a set of macros private to the current module to
@@ -2061,7 +2025,7 @@ defmodule Kernel do
     end
   end
 
-  @doc %B"""
+  @doc %S"""
   Inspect the given arguments according to the `Inspect` protocol.
 
   ## Options
@@ -2072,7 +2036,7 @@ defmodule Kernel do
                but are printed as just tuples, defaults to false;
 
   * `:limit` - limits the number of items that are printed for tuples, bitstrings,
-               and lists, does not apply to strings nor char lists;
+               and lists, does not apply to strings nor char lists, defaults to 50;
 
   * `:pretty` - if set to true enables pretty printing, defaults to false;
 
@@ -2123,21 +2087,26 @@ defmodule Kernel do
   end
 
   @doc """
-  Convert the argument to a string according to the Binary.Chars protocol.
+  Converts the argument to a string according to the String.Chars protocol.
   This is the function invoked when there is string interpolation.
 
   ## Examples
 
-      iex> to_binary(:foo)
+      iex> to_string(:foo)
       "foo"
 
   """
-
   # If it is a binary at compilation time, simply return it.
-  defmacro to_binary(arg) when is_binary(arg), do: arg
+  defmacro to_string(arg) when is_binary(arg), do: arg
 
-  defmacro to_binary(arg) do
-    quote do: Binary.Chars.to_binary(unquote(arg))
+  defmacro to_string(arg) do
+    quote do: String.Chars.to_string(unquote(arg))
+  end
+
+  @doc false
+  def to_binary(chars) do
+    IO.write "to_binary/1 is deprecated, please use to_string/1 instead\n#{Exception.format_stacktrace}"
+    String.Chars.to_string(chars)
   end
 
   @doc """
@@ -3375,10 +3344,8 @@ defmodule Kernel do
 
   """
   defmacro defdelegate(funs, opts) do
-    quote do
-      funs = unquote(Macro.escape(funs, unquote: true))
-      opts = unquote(opts)
-
+    funs = Macro.escape(funs, unquote: true)
+    quote bind_quoted: [funs: funs, opts: opts] do
       target = Keyword.get(opts, :to) ||
         raise(ArgumentError, message: "Expected to: to be given as argument")
 
@@ -3396,43 +3363,56 @@ defmodule Kernel do
             false -> args
           end
 
-        fun  = Keyword.get(opts, :as, name)
-        body = quote do: unquote(target).unquote(fun)(unquote_splicing(actual_args))
+        fun = Keyword.get(opts, :as, name)
 
-        def name, args, [], do: body
+        def unquote(name)(unquote_splicing(args)) do
+          unquote(target).unquote(fun)(unquote_splicing(actual_args))
+        end
       end
     end
   end
 
   @doc """
-  Handles the sigil %B. It simples returns a binary
+  Handles the sigil %S. It simples returns a string
   without escaping characters and without interpolations.
 
   ## Examples
 
-      iex> %B(foo)
+      iex> %S(foo)
       "foo"
-      iex> %B(f\#{o}o)
+      iex> %S(f\#{o}o)
       "f\\\#{o}o"
 
   """
+  defmacro sigil_S(string, []) do
+    string
+  end
+
+  @doc false
   defmacro sigil_B(string, []) do
+    IO.write "%B() is deprecated, please use %S() instead\n#{Exception.format_stacktrace}"
     string
   end
 
   @doc """
-  Handles the sigil %b. It returns a binary as if it was double quoted
+  Handles the sigil %s. It returns a string as if it was double quoted
   string, unescaping characters and replacing interpolations.
 
   ## Examples
 
-      iex> %b(foo)
+      iex> %s(foo)
       "foo"
-      iex> %b(f\#{:o}o)
+      iex> %s(f\#{:o}o)
       "foo"
 
   """
+  defmacro sigil_s({ :<<>>, line, pieces }, []) do
+    { :<<>>, line, Macro.unescape_tokens(pieces) }
+  end
+
+  @doc false
   defmacro sigil_b({ :<<>>, line, pieces }, []) do
+    IO.write "%b() is deprecated, please use %s() instead\n#{Exception.format_stacktrace}"
     { :<<>>, line, Macro.unescape_tokens(pieces) }
   end
 
@@ -3449,7 +3429,7 @@ defmodule Kernel do
 
   """
   defmacro sigil_C({ :<<>>, _line, [string] }, []) when is_binary(string) do
-    binary_to_list(string)
+    String.to_char_list!(string)
   end
 
   @doc """
@@ -3468,12 +3448,12 @@ defmodule Kernel do
   # We can skip the runtime conversion if we are
   # creating a binary made solely of series of chars.
   defmacro sigil_c({ :<<>>, _line, [string] }, []) when is_binary(string) do
-    :unicode.characters_to_list(Macro.unescape_binary(string))
+    String.to_char_list!(Macro.unescape_string(string))
   end
 
   defmacro sigil_c({ :<<>>, line, pieces }, []) do
     binary = { :<<>>, line, Macro.unescape_tokens(pieces) }
-    quote do: :unicode.characters_to_list(unquote(binary))
+    quote do: String.to_char_list!(unquote(binary))
   end
 
   @doc """
@@ -3486,14 +3466,14 @@ defmodule Kernel do
 
   """
   defmacro sigil_r({ :<<>>, _line, [string] }, options) when is_binary(string) do
-    binary = Macro.unescape_binary(string, Regex.unescape_map(&1))
-    regex  = Regex.compile!(binary, options)
+    binary = Macro.unescape_string(string, Regex.unescape_map(&1))
+    regex  = Regex.compile!(binary, :binary.list_to_bin(options))
     Macro.escape(regex)
   end
 
   defmacro sigil_r({ :<<>>, line, pieces }, options) do
     binary = { :<<>>, line, Macro.unescape_tokens(pieces, Regex.unescape_map(&1)) }
-    quote do: Regex.compile!(unquote(binary), unquote(options))
+    quote do: Regex.compile!(unquote(binary), unquote(:binary.list_to_bin(options)))
   end
 
   @doc """
@@ -3507,7 +3487,7 @@ defmodule Kernel do
 
   """
   defmacro sigil_R({ :<<>>, _line, [string] }, options) when is_binary(string) do
-    regex = Regex.compile!(string, options)
+    regex = Regex.compile!(string, :binary.list_to_bin(options))
     Macro.escape(regex)
   end
 
@@ -3532,7 +3512,7 @@ defmodule Kernel do
   """
 
   defmacro sigil_w({ :<<>>, _line, [string] }, modifiers) when is_binary(string) do
-    split_words(Macro.unescape_binary(string), modifiers)
+    split_words(Macro.unescape_string(string), modifiers)
   end
 
   defmacro sigil_w({ :<<>>, line, pieces }, modifiers) do
@@ -3565,21 +3545,25 @@ defmodule Kernel do
   # Extracts concatenations in order to optimize many
   # concatenations into one single clause.
   defp extract_concatenations({ :<>, _, [left, right] }) do
-    [wrap_concatenation(left) | extract_concatenations(right)]
+    wrap_concatenation(left) ++ extract_concatenations(right)
   end
 
   defp extract_concatenations(other) do
-    [wrap_concatenation(other)]
+    wrap_concatenation(other)
   end
 
   # If it is a binary, we don't need to add the binary
-  # tag. This allows us to use <> function signatures.
+  # tag. This allows us to use <> on pattern matching.
   defp wrap_concatenation(binary) when is_binary(binary) do
-    binary
+    [binary]
+  end
+
+  defp wrap_concatenation({ :<<>>, _, parts }) do
+    parts
   end
 
   defp wrap_concatenation(other) do
-    { :::, [], [other, { :binary, [], nil }] }
+    [{ :::, [], [other, { :binary, [], nil }] }]
   end
 
   # Builds cond clauses by nesting them recursively.
@@ -3627,23 +3611,26 @@ defmodule Kernel do
 
   defp split_words(string, modifiers) do
     mod = case modifiers do
-      [] -> ?b
-      [mod] when mod in [?b, ?a, ?c] -> mod
-      _else -> raise ArgumentError, message: "modifier must be one of: b, a, c"
+      [] -> ?s
+      [mod] when mod in [?b] ->
+        IO.write "%w()b is deprecated, please use %w()s instead\n#{Exception.format_stacktrace}"
+        ?s
+      [mod] when mod in [?s, ?a, ?c] -> mod
+      _else -> raise ArgumentError, message: "modifier must be one of: s, a, c"
     end
 
     case is_binary(string) do
       true ->
         case mod do
-          ?b -> String.split(string)
+          ?s -> String.split(string)
           ?a -> lc p inlist String.split(string), do: binary_to_atom(p)
-          ?c -> lc p inlist String.split(string), do: :unicode.characters_to_list(p)
+          ?c -> lc p inlist String.split(string), do: String.to_char_list!(p)
         end
       false ->
         case mod do
-          ?b -> quote do: String.split(unquote(string))
+          ?s -> quote do: String.split(unquote(string))
           ?a -> quote do: lc(p inlist String.split(unquote(string)), do: binary_to_atom(p))
-          ?c -> quote do: lc(p inlist String.split(unquote(string)), do: :unicode.characters_to_list(p))
+          ?c -> quote do: lc(p inlist String.split(unquote(string)), do: String.to_char_list!(p))
         end
     end
   end

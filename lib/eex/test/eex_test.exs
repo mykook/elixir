@@ -25,12 +25,6 @@ defmodule EExText.Compiled do
     { __ENV__.line, hd(tl(System.stacktrace)) }
   end
 
-  @file __ENV__
-  def other do
-    fill_in_stacktrace
-    { __ENV__.line, hd(tl(System.stacktrace)) }
-  end
-
   defp fill_in_stacktrace do
     try do
       :erlang.error "failed"
@@ -312,7 +306,7 @@ foo
         { EExText.Compiled,
           :before_compile,
           0,
-          [file: binary_to_list(__FILE__), line: 7]
+          [file: to_char_list(__FILE__), line: 7]
         }
       }
 
@@ -321,7 +315,7 @@ foo
         { EExText.Compiled,
           :after_compile,
           0,
-          [file: binary_to_list(__FILE__), line: 18]
+          [file: to_char_list(__FILE__), line: 18]
         }
       }
 
@@ -331,15 +325,6 @@ foo
           :unknown,
           0,
           [file: 'unknown', line: 24]
-        }
-      }
-
-    assert EExText.Compiled.other ==
-      { 31,
-        { EExText.Compiled,
-          :other,
-          0,
-          [file: binary_to_list(__FILE__), line: 30]
         }
       }
   end

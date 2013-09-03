@@ -1,7 +1,7 @@
 defmodule IEx.Helpers do
   @moduledoc """
   Welcome to Interactive Elixir. You are currently
-  seeing the documentation for the module IEx.Helpers
+  seeing the documentation for the module `IEx.Helpers`
   which provides many helpers to make Elixir's shell
   more joyful to work with.
 
@@ -15,7 +15,7 @@ defmodule IEx.Helpers do
   * `cd/1`    — changes the current directory
   * `clear/0` — clears the screen
   * `flush/0` — flushes all messages sent to the shell
-  * `h/0`     — prints this help
+  * `h/0`     — prints this help message
   * `h/1`     — prints help for the given module, function or macro
   * `l/1`     — loads the given module's beam code and purges the current version
   * `ls/0`    — lists the contents of the current directory
@@ -23,7 +23,7 @@ defmodule IEx.Helpers do
   * `m/0`     — prints loaded modules
   * `pwd/0`   — prints the current working directory
   * `r/0`     — recompile and reload all modules that were previously reloaded
-  *  r/1`     — recompiles and reloads the given module's source file
+  * `r/1`     — recompiles and reloads the given module's source file
   * `s/1`     — prints spec information
   * `t/1`     — prints type information
   * `v/0`     — prints the history of commands evaluated in the session
@@ -63,8 +63,15 @@ defmodule IEx.Helpers do
       #=> [Baz]
   """
   def c(files, path // ".") do
-    tuples = Kernel.ParallelCompiler.files_to_path List.wrap(files), path
-    Enum.map tuples, elem(&1, 0)
+    { erls, exs } = Enum.partition(List.wrap(files), &String.ends_with?(&1, ".erl"))
+
+    modules = Enum.map(erls, fn(source) ->
+      { module, binary } = compile_erlang(source)
+      File.write!(Path.join(path, source), binary)
+      module
+    end)
+
+    modules ++ Kernel.ParallelCompiler.files_to_path(exs, path)
   end
 
   @doc """
@@ -114,6 +121,13 @@ defmodule IEx.Helpers do
       h receive/1
       h Enum.all?/2
       h Enum.all?
+
+  The h helper also accepts strings representing a function
+  name, useful for retrieving information about operators:
+
+      h "*"
+      h "+"
+      h "<>"
   """
   # Special case for `h AnyModule.__info__/1`
   defmacro h({ :/, _, [{ { :., _, [_mod, :__info__] }, _, [] }, 1] }) do
@@ -150,6 +164,12 @@ defmodule IEx.Helpers do
   defmacro h({ name, _, args }) when args == [] or is_atom(args) do
     quote do
       IEx.Introspection.h([unquote(__MODULE__), Kernel, Kernel.SpecialForms], unquote(name))
+    end
+  end
+
+  defmacro h(string) when is_binary(string) do
+    quote do
+      IEx.Introspection.h([unquote(__MODULE__), Kernel, Kernel.SpecialForms], binary_to_atom(unquote(string)))
     end
   end
 
@@ -280,11 +300,18 @@ defmodule IEx.Helpers do
   end
 
   defp do_r(module) do
-    if source = source(module) do
-      Process.put(:iex_reloaded, :ordsets.add_element(module, iex_reloaded))
-      Enum.map(Code.load_file(source), fn {name, _} -> name end)
-    else
-      :nosource
+    source = source(module)
+    cond do
+      source == nil ->
+        :nosource
+
+      String.ends_with?(source, ".erl") ->
+        Process.put(:iex_reloaded, :ordsets.add_element(module, iex_reloaded))
+        [ compile_erlang(source) |> elem(0) ]
+
+      true ->
+        Process.put(:iex_reloaded, :ordsets.add_element(module, iex_reloaded))
+        Enum.map(Code.load_file(source), fn {name, _} -> name end)
     end
   end
 
@@ -324,7 +351,7 @@ defmodule IEx.Helpers do
 
     case source do
       nil -> nil
-      source -> list_to_binary(source)
+      source -> String.from_char_list!(source)
     end
   end
 
@@ -389,8 +416,7 @@ defmodule IEx.Helpers do
         IO.puts ""
         len = 0
       end
-      IO.write format_item(Path.join(path, item),
-                           iolist_to_binary(:io_lib.format('~-*ts', [width, item])))
+      IO.write format_item(Path.join(path, item), String.ljust(item, width))
       len+width
     end)
     IO.puts ""
@@ -435,5 +461,18 @@ defmodule IEx.Helpers do
 
   defmacro import_file(_) do
     raise ArgumentError, message: "import_file/1 expects a literal binary as its argument"
+  end
+
+  # Compiles and loads an erlang source file, returns { module, binary }
+  defp compile_erlang(source) do
+    source = Path.relative_to_cwd(source) |> String.to_char_list!
+    case :compile.file(source, [:binary, :report]) do
+      { :ok, module, binary } ->
+        :code.purge(module)
+        { :module, module } = :code.load_binary(module, source, binary)
+        { module, binary }
+      _ ->
+        raise CompileError
+    end
   end
 end

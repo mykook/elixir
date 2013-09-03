@@ -5,7 +5,7 @@ defmodule Mix.Tasks.Escriptize do
   @shortdoc "Generates an escript for the project"
   @recursive true
 
-  @moduledoc %B"""
+  @moduledoc %S"""
   Generates an escript for the project.
 
   ## Command line options
@@ -49,7 +49,7 @@ defmodule Mix.Tasks.Escriptize do
 
   """
   def run(args) do
-    { opts, _ } = OptionParser.parse(args, switches: [force: :boolean, no_compile: :boolean])
+    { opts, _, _ } = OptionParser.parse(args, switches: [force: :boolean, no_compile: :boolean])
 
     # Require the project to be available
     Mix.Project.get!
@@ -146,7 +146,7 @@ defmodule Mix.Tasks.Escriptize do
 
   defp to_tuples(files) do
     lc f inlist files do
-      { :unicode.characters_to_list(Path.basename(f)), File.read!(f) }
+      { String.to_char_list!(Path.basename(f)), File.read!(f) }
     end
   end
 
@@ -169,7 +169,7 @@ defmodule Mix.Tasks.Escriptize do
           case :application.start(:elixir) do
             :ok ->
               start_app
-              args = Enum.map(args, :unicode.characters_to_binary(&1))
+              args = Enum.map(args, String.from_char_list!(&1))
               Kernel.CLI.run fn -> @module.main(args) end, true
             _   ->
               IO.puts :stderr, IO.ANSI.escape("%{red, bright} Elixir is not in the code path, aborting.")

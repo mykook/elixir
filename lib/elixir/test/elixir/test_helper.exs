@@ -34,7 +34,7 @@ defmodule PathHelpers do
   end
 
   defp runcmd(executable,args) do 
-    :os.cmd binary_to_list("#{executable} #{:unicode.characters_to_binary(args)}#{redirect_std_err_on_win}")
+    :os.cmd :binary.bin_to_list("#{executable} #{String.from_char_list!(args)}#{redirect_std_err_on_win}")
   end 
   
   defp executable_path(name) do
@@ -60,7 +60,7 @@ defmodule CompileAssertion do
         raise ExUnit.ExpectationError,
           expected: inspect(exception),
           actual: inspect(elem(error, 0)),
-          reason: "match"
+          assertion: "match"
     end
   end
 
@@ -71,7 +71,7 @@ defmodule CompileAssertion do
         raise ExUnit.ExpectationError,
           expected: "#{inspect exception}[message: #{inspect message}]",
           actual: "#{inspect elem(error, 0)}[message: #{inspect elem(error, 1)}]",
-          reason: "match"
+          assertion: "match"
     end
   end
 

@@ -25,11 +25,14 @@ defmodule IEx.HelpersTest do
   end
 
   test "h helper module" do
-    assert "# IEx.Helpers\n\nWelcome to Interactive Elixir" <> _
-           = capture_io(fn -> h IEx.Helpers end)
+    assert "# IEx.Helpers\n\nWelcome to Interactive Elixir" <> _ =
+           capture_io(fn -> h IEx.Helpers end)
 
-    assert capture_io(fn -> h :whatever end)
-           == "Could not load module :whatever: nofile\n"
+    assert capture_io(fn -> h :whatever end) ==
+           "Could not load module :whatever, got: nofile\n"
+
+    assert capture_io(fn -> h :lists end) ==
+           ":lists is an Erlang module and, as such, it was not compiled with docs\n"
   end
 
   test "h helper function" do
@@ -45,6 +48,18 @@ defmodule IEx.HelpersTest do
 
     assert capture_io(fn -> h pwd end)
            == "* def pwd()\n\nPrints the current working directory.\n\n"
+  end
+
+  test "h helper function string" do
+    h_times_normal = capture_io(fn -> h Kernel.* end)
+    h_times_string = capture_io(fn -> h "*" end)
+
+    assert h_times_string == h_times_normal
+
+    h_anonfun_normal = capture_io(fn -> h Kernel.SpecialForms.& end)
+    h_anonfun_string = capture_io(fn -> h "&" end)
+
+    assert h_anonfun_normal == h_anonfun_string
   end
 
   test "h helper __info__" do
@@ -80,7 +95,7 @@ defmodule IEx.HelpersTest do
     end) >= 2
 
     assert capture_io(fn -> s Enum.all?/1 end) == "@spec all?(t()) :: boolean()\n"
-    assert capture_io(fn -> s list_to_binary end) == "@spec list_to_binary(iolist()) :: binary()\n"
+    assert capture_io(fn -> s iolist_to_binary end) == "@spec iolist_to_binary(iolist() | binary()) :: binary()\n"
   end
 
   test "v helper" do
@@ -211,6 +226,20 @@ defmodule IEx.HelpersTest do
     cleanup_modules([Sample, Sample2])
   end
 
+  test "c helper erlang" do
+    assert_raise UndefinedFunctionError, "undefined function: :sample.hello/0", fn ->
+      :sample.hello
+    end
+
+    filename = "sample.erl"
+    with_file filename, erlang_module_code, fn ->
+      assert c(filename) == [:sample]
+      assert :sample.hello == :world
+    end
+  after
+    cleanup_modules([:sample])
+  end
+
   test "l helper" do
     assert_raise UndefinedFunctionError, "undefined function: Sample.run/0", fn ->
       Sample.run
@@ -268,12 +297,31 @@ defmodule IEx.HelpersTest do
         end
 
         assert [Sample] = r()
-      end) =~ %r"^.+?sample\.ex:1: redefining module Sample\n.+?sample\.ex:1: redefining module Sample\n$"
+      end) =~ %r"^.*?sample\.ex:1: redefining module Sample\n.*?sample\.ex:1: redefining module Sample\n$"
     end
   after
     # Clean up old version produced by the r helper
     :code.purge(Sample)
     cleanup_modules([Sample])
+  end
+
+  test "r helper erlang" do
+    assert_raise UndefinedFunctionError, "undefined function: :sample.hello/0", fn ->
+      :sample.hello
+    end
+
+    filename = "sample.erl"
+    with_file filename, erlang_module_code, fn ->
+      assert c(filename) == [:sample]
+      assert :sample.hello == :world
+
+      File.write!(filename, other_erlang_module_code)
+      assert { :sample, [:sample] } = r(:sample)
+      assert :sample.hello == :bye
+    end
+  after
+    :code.purge(:sample)
+    cleanup_modules([:sample])
   end
 
   defp test_module_code do
@@ -293,6 +341,22 @@ defmodule IEx.HelpersTest do
         :world
       end
     end
+    """
+  end
+
+  defp erlang_module_code do
+    """
+    -module(sample).
+    -export([hello/0]).
+    hello() -> world.
+    """
+  end
+
+  defp other_erlang_module_code do
+    """
+    -module(sample).
+    -export([hello/0]).
+    hello() -> bye.
     """
   end
 

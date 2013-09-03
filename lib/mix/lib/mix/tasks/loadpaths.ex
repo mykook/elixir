@@ -21,7 +21,7 @@ defmodule Mix.Tasks.Loadpaths do
 
   """
   def run(args) do
-    { opts, _ } = OptionParser.parse(args)
+    { opts, _, _ } = OptionParser.parse(args)
 
     unless opts[:no_deps] do
       Mix.Task.run "deps.loadpaths", args
@@ -38,6 +38,10 @@ defmodule Mix.Tasks.Loadpaths do
         end
       end
     end
+
+    # Force recompile if we have a version mismatch
+    old_vsn = Mix.Deps.Lock.elixir_vsn
+    if old_vsn && old_vsn != System.version, do: Mix.Deps.Lock.touch
 
     Enum.each Mix.Project.load_paths, Code.prepend_path(&1)
   end

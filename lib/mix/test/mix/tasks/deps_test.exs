@@ -241,6 +241,18 @@ defmodule Mix.Tasks.DepsTest do
         version: "0.1.0",
         deps: [
           { :deps_repo, "0.1.0", path: "custom/deps_repo" },
+          { :git_repo, "0.1.0", git: MixTest.Case.fixture_path("git_repo") }
+        ]
+      ]
+    end
+  end
+
+  defmodule OverridenDepsApp do
+    def project do
+      [
+        app: :raw_sample,
+        version: "0.1.0",
+        deps: [
           { :bad_deps_repo, "0.1.0", path: "custom/bad_deps_repo" },
           { :git_repo, "0.1.0", git: MixTest.Case.fixture_path("git_repo"), override: true }
         ]
@@ -248,13 +260,12 @@ defmodule Mix.Tasks.DepsTest do
     end
   end
 
-  defmodule UnConvergedDepsApp do
+  defmodule NonOverridenDepsApp do
     def project do
       [
         app: :raw_sample,
         version: "0.1.0",
         deps: [
-          { :deps_repo, "0.1.0", path: "custom/deps_repo" },
           { :bad_deps_repo, "0.1.0", path: "custom/bad_deps_repo" },
           { :git_repo, "0.1.0", git: MixTest.Case.fixture_path("git_repo") }
         ]
@@ -275,6 +286,24 @@ defmodule Mix.Tasks.DepsTest do
       Mix.Tasks.Deps.Update.run ["--all"]
       assert_received { :mix_shell, :info, ["* Updating deps_repo (0.1.0) [path: \"custom/deps_repo\"]"] }
       assert_received { :mix_shell, :info, ["* Compiling deps_repo"] }
+    end
+  after
+    Mix.Project.pop
+  end
+
+  test "respects --quiet in deps.compile" do
+    Mix.Project.push NestedDepsApp
+
+    in_fixture "deps_status", fn ->
+      Mix.Tasks.Deps.Get.run ["--quiet"]
+      message = "* Getting git_repo [git: #{inspect fixture_path("git_repo")}]"
+      assert_received { :mix_shell, :info, [^message] }
+      refute_received { :mix_shell, :info, ["* Compiling deps_repo"] }
+      assert_received { :mix_shell, :info, ["Generated git_repo.app"] }
+
+      Mix.Tasks.Deps.Update.run ["--all"]
+      assert_received { :mix_shell, :info, ["* Updating deps_repo (0.1.0) [path: \"custom/deps_repo\"]"] }
+      refute_received { :mix_shell, :info, ["* Compiling deps_repo"] }
     end
   after
     Mix.Project.pop
@@ -303,14 +332,45 @@ defmodule Mix.Tasks.DepsTest do
       assert_received { :mix_shell, :info, [^message] }
       assert_received { :mix_shell, :info, ["Generated git_repo.app"] }
 
-      # Make sure retriever uses converger
+      # Make sure retriever uses converger,
+      # so the message appears just once
       refute_received { :mix_shell, :info, [^message] }
 
       Mix.Task.clear
       Mix.Tasks.Deps.Update.run ["--all"]
 
-      assert_received { :mix_shell, :info, ["* Updating deps_repo (0.1.0) [path: \"custom/deps_repo\"]"] }
-      assert_received { :mix_shell, :info, ["* Updating bad_deps_repo (0.1.0) [path: \"custom/bad_deps_repo\"]"] }
+      message = "* Updating deps_repo (0.1.0) [path: \"custom/deps_repo\"]"
+      assert_received { :mix_shell, :info, [^message] }
+      message = "* Updating git_repo (0.1.0) [git: \"#{fixture_path("git_repo")}\"]"
+      assert_received { :mix_shell, :info, [^message] }
+
+      Mix.Tasks.Deps.Check.run []
+    end
+  after
+    purge [GitRepo, GitRepo.Mix]
+    Mix.Project.pop
+  end
+
+  test "works with overriden dependencies" do
+    Mix.Project.push OverridenDepsApp
+
+    in_fixture "deps_status", fn ->
+      Mix.Tasks.Deps.Get.run []
+      message = "* Getting git_repo [git: #{inspect fixture_path("git_repo")}]"
+      assert_received { :mix_shell, :info, [^message] }
+      assert_received { :mix_shell, :info, ["Generated git_repo.app"] }
+
+      # Make sure retriever uses converger,
+      # so the message appears just once
+      refute_received { :mix_shell, :info, [^message] }
+
+      Mix.Task.clear
+      Mix.Tasks.Deps.Update.run ["--all"]
+
+      message = "* Updating bad_deps_repo (0.1.0) [path: \"custom/bad_deps_repo\"]"
+      assert_received { :mix_shell, :info, [^message] }
+      message = "* Updating git_repo (0.1.0) [git: \"#{fixture_path("git_repo")}\"]"
+      assert_received { :mix_shell, :info, [^message] }
 
       Mix.Tasks.Deps.Check.run []
     end
@@ -320,7 +380,7 @@ defmodule Mix.Tasks.DepsTest do
   end
 
   test "converged dependencies will error if not overriding" do
-    Mix.Project.push UnConvergedDepsApp
+    Mix.Project.push NonOverridenDepsApp
 
     in_fixture "deps_status", fn ->
       assert_raise Mix.Error, fn ->
@@ -356,6 +416,27 @@ defmodule Mix.Tasks.DepsTest do
       message = "* Updating git_repo (0.1.0) [git: \"#{fixture_path("git_repo")}\"]"
       assert_received { :mix_shell, :info, [^message] }
       assert_received { :mix_shell, :info, ["* Updating deps_repo (0.1.0) [path: \"custom/deps_repo\"]"] }
+    end
+  after
+    Mix.Project.pop
+  end
+
+  test "check if dependencies are using old elixir" do
+    Mix.Project.push SuccessfulDepsApp
+
+    in_fixture "deps_status", fn ->
+      Mix.Tasks.Deps.Compile.run []
+      Mix.Tasks.Deps.Check.run []
+
+      File.write!("deps/ok/ebin/.compile.lock", "the_future")
+      Mix.Task.clear
+
+      assert_raise Mix.Error, "Can't continue due to errors on dependencies", fn ->
+        Mix.Tasks.Deps.Check.run []
+      end
+
+      assert_received { :mix_shell, :error, ["* ok [path: \"deps/ok\"]"] }
+      assert_received { :mix_shell, :error, ["  the dependency is built with an out-of-date elixir version, run `mix deps.get`"] }
     end
   after
     Mix.Project.pop

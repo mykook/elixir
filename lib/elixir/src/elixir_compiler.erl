@@ -40,7 +40,7 @@ quoted(Forms, File) when is_binary(File) ->
 file(Relative) when is_binary(Relative) ->
   File = filename:absname(Relative),
   { ok, Bin } = file:read_file(File),
-  string(unicode:characters_to_list(Bin), File).
+  string(elixir_utils:characters_to_list(Bin), File).
 
 %% Compiles a file to the given path (directory).
 
@@ -94,7 +94,7 @@ module(Forms, File, Callback) ->
 module(Forms, File, RawOptions, Bootstrap, Callback) when
     is_binary(File), is_list(Forms), is_list(RawOptions), is_boolean(Bootstrap), is_function(Callback) ->
   { Options, SkipNative } = compile_opts(Forms, RawOptions),
-  Listname = unicode:characters_to_list(File),
+  Listname = elixir_utils:characters_to_list(File),
 
   case compile:noenv_forms([no_auto_import()|Forms], [return,{source,Listname}|Options]) of
     {ok, ModuleName, Binary, RawWarnings} ->
@@ -102,12 +102,12 @@ module(Forms, File, RawOptions, Bootstrap, Callback) when
         true  -> [{?MODULE,[{0,?MODULE,{skip_native,ModuleName}}]}|RawWarnings];
         false -> RawWarnings
       end,
-      format_warnings(Bootstrap, File, Warnings),
+      format_warnings(Bootstrap, Warnings),
       code:load_binary(ModuleName, Listname, Binary),
       Callback(ModuleName, Binary);
     {error, Errors, Warnings} ->
-      format_warnings(Bootstrap, File, Warnings),
-      format_errors(File, Errors)
+      format_warnings(Bootstrap, Warnings),
+      format_errors(Errors)
   end.
 
 %% Compile core files for bootstrap.
@@ -166,22 +166,17 @@ module_form(Fun, Exprs, Line, File, Module, Vars) when
   end, { nil, Line }, Vars),
 
   Args = [{ var, Line, '_@MODULE'}, Cons],
-
-  Relative =
-    case get_opt(internal) of
-      true  -> File;
-      false -> 'Elixir.Path':relative_to(File, 'Elixir.System':'cwd!'())
-    end,
+  Relative = elixir_utils:relative_to_cwd(File),
 
   [
-    { attribute, Line, file, { unicode:characters_to_list(File), 1 } },
+    { attribute, Line, file, { elixir_utils:characters_to_list(File), 1 } },
     { attribute, Line, module, Module },
     { attribute, Line, export, [{ Fun, 2 }, { '__RELATIVE__', 0 }] },
     { function, Line, Fun, length(Args), [
       { clause, Line, Args, [], Exprs }
     ] },
     { function, Line, '__RELATIVE__', 0, [
-      { clause, Line, [], [], [elixir_tree_helpers:elixir_to_erl(Relative)] }
+      { clause, Line, [], [], [elixir_utils:elixir_to_erl(Relative)] }
     ] }
   ].
 
@@ -204,7 +199,7 @@ binary_to_path({ModuleName, Binary}, CompilePath) ->
 
 core_file(File) ->
   try
-    Lists = file(list_to_binary(File)),
+    Lists = file(File),
     [binary_to_path(X, "lib/elixir/ebin") || X <- Lists],
     io:format("Compiled ~ts~n", [File])
   catch
@@ -215,29 +210,31 @@ core_file(File) ->
 
 core_main() ->
   [
-    "lib/elixir/lib/kernel.ex",
-    "lib/elixir/lib/keyword.ex",
-    "lib/elixir/lib/module.ex",
-    "lib/elixir/lib/list.ex",
-    "lib/elixir/lib/kernel/typespec.ex",
-    "lib/elixir/lib/record.ex",
-    "lib/elixir/lib/macro.ex",
-    "lib/elixir/lib/macro/env.ex",
-    "lib/elixir/lib/exception.ex",
-    "lib/elixir/lib/code.ex",
-    "lib/elixir/lib/protocol.ex",
-    "lib/elixir/lib/enum.ex",
-    "lib/elixir/lib/inspect/algebra.ex",
-    "lib/elixir/lib/inspect.ex",
-    "lib/elixir/lib/binary/chars.ex",
-    "lib/elixir/lib/io.ex",
-    "lib/elixir/lib/path.ex",
-    "lib/elixir/lib/system.ex",
-    "lib/elixir/lib/kernel/cli.ex",
-    "lib/elixir/lib/kernel/error_handler.ex",
-    "lib/elixir/lib/kernel/parallel_compiler.ex",
-    "lib/elixir/lib/kernel/record_rewriter.ex",
-    "lib/elixir/lib/module/dispatch_tracker.ex"
+    <<"lib/elixir/lib/kernel.ex">>,
+    <<"lib/elixir/lib/keyword.ex">>,
+    <<"lib/elixir/lib/module.ex">>,
+    <<"lib/elixir/lib/list.ex">>,
+    <<"lib/elixir/lib/kernel/typespec.ex">>,
+    <<"lib/elixir/lib/record.ex">>,
+    <<"lib/elixir/lib/macro.ex">>,
+    <<"lib/elixir/lib/macro/env.ex">>,
+    <<"lib/elixir/lib/exception.ex">>,
+    <<"lib/elixir/lib/code.ex">>,
+    <<"lib/elixir/lib/protocol.ex">>,
+    <<"lib/elixir/lib/enum.ex">>,
+    <<"lib/elixir/lib/inspect/algebra.ex">>,
+    <<"lib/elixir/lib/inspect.ex">>,
+    <<"lib/elixir/lib/range.ex">>,
+    <<"lib/elixir/lib/string.ex">>,
+    <<"lib/elixir/lib/string/chars.ex">>,
+    <<"lib/elixir/lib/io.ex">>,
+    <<"lib/elixir/lib/path.ex">>,
+    <<"lib/elixir/lib/system.ex">>,
+    <<"lib/elixir/lib/kernel/cli.ex">>,
+    <<"lib/elixir/lib/kernel/error_handler.ex">>,
+    <<"lib/elixir/lib/kernel/parallel_compiler.ex">>,
+    <<"lib/elixir/lib/kernel/record_rewriter.ex">>,
+    <<"lib/elixir/lib/module/dispatch_tracker.ex">>
   ].
 
 %% ERROR HANDLING
@@ -246,15 +243,15 @@ format_error({ skip_native, Module }) ->
   io_lib:format("skipping native compilation for ~ts because it contains on_load attribute",
     [elixir_errors:inspect(Module)]).
 
-format_errors(_File, []) ->
+format_errors([]) ->
   exit({ nocompile, "compilation failed but no error was raised" });
 
-format_errors(File, Errors) ->
-  lists:foreach(fun ({_, Each}) ->
+format_errors(Errors) ->
+  lists:foreach(fun ({File, Each}) ->
     lists:foreach(fun (Error) -> elixir_errors:handle_file_error(File, Error) end, Each)
   end, Errors).
 
-format_warnings(Bootstrap, File, Warnings) ->
-  lists:foreach(fun ({_, Each}) ->
+format_warnings(Bootstrap, Warnings) ->
+  lists:foreach(fun ({File, Each}) ->
     lists:foreach(fun (Warning) -> elixir_errors:handle_file_warning(Bootstrap, File, Warning) end, Each)
   end, Warnings).

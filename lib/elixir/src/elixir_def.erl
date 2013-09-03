@@ -160,13 +160,13 @@ run_on_definition_callbacks(Kind, Line, Module, Name, Args, Guards, Expr, S, CO)
 
 retrieve_file(Line, Module, S, CO) ->
   case elixir_compiler:get_opt(internal, CO) of
-    true -> { binary_to_list(S#elixir_scope.file), Line };
+    true -> { elixir_utils:characters_to_list(S#elixir_scope.file), Line };
     _ ->
       case 'Elixir.Module':get_attribute(Module, file) of
-        nil  -> { binary_to_list(S#elixir_scope.file), Line };
+        nil  -> { elixir_utils:characters_to_list(S#elixir_scope.file), Line };
         Else ->
           'Elixir.Module':delete_attribute(Module, file),
-          Else
+          { Else, 0 }
       end
   end.
 
@@ -309,12 +309,13 @@ default_function_for(_, Name, { clause, Line, Args, _Guards, _Exprs } = Clause) 
 store_each(Check, Kind, File, Location, Table, CTable, Defaults, {function, Line, Name, Arity, Clauses}) ->
   Tuple = { Name, Arity },
   case ets:lookup(Table, Tuple) of
-    [{ Tuple, StoredKind, StoredLine, _, StoredCheck, StoredLocation, StoredDefaults }] ->
+    [{ Tuple, StoredKind, StoredLine, StoredFile, StoredCheck, StoredLocation, StoredDefaults }] ->
       FinalLine = StoredLine,
       FinalLocation = StoredLocation,
       FinalDefaults = max(Defaults, StoredDefaults),
       check_valid_kind(Line, File, Name, Arity, Kind, StoredKind),
-      (Check and StoredCheck) andalso check_valid_clause(Line, File, Name, Arity, Kind, Table),
+      (Check and StoredCheck) andalso
+        check_valid_clause(Line, File, Name, Arity, Kind, Table, StoredLine, StoredFile),
       check_valid_defaults(Line, File, Name, Arity, Kind, Defaults, StoredDefaults);
     [] ->
       FinalLine = Line,
@@ -332,13 +333,14 @@ check_valid_kind(Line, File, Name, Arity, Kind, StoredKind) ->
   elixir_errors:form_error(Line, File, ?MODULE,
     { changed_kind, { Name, Arity, StoredKind, Kind } }).
 
-check_valid_clause(Line, File, Name, Arity, Kind, Table) ->
+check_valid_clause(Line, File, Name, Arity, Kind, Table, StoredLine, StoredFile) ->
   case ets:lookup_element(Table, last, 2) of
     {Name,Arity} -> [];
     [] -> [];
     _ ->
+      Relative = elixir_utils:relative_to_cwd(StoredFile),
       elixir_errors:handle_file_warning(File, { Line, ?MODULE,
-        { override_function, { Kind, Name, Arity } } })
+        { ungrouped_clause, { Kind, Name, Arity, StoredLine, Relative } } })
   end.
 
 check_valid_defaults(_Line, _File, _Name, _Arity, _Kind, 0, _) -> [];
@@ -385,8 +387,9 @@ format_error({clauses_with_defaults,{Kind,Name,Arity}}) ->
 format_error({out_of_order_defaults,{Kind,Name,Arity}}) ->
   io_lib:format("clause with defaults should be the first clause in ~ts ~ts/~B", [Kind, Name, Arity]);
 
-format_error({override_function,{Kind,Name,Arity}}) ->
-  io_lib:format("trying to override previously defined ~ts ~ts/~B", [Kind, Name, Arity]);
+format_error({ungrouped_clause,{Kind,Name,Arity,OrigLine,OrigFile}}) ->
+  io_lib:format("clauses for the same ~ts should be grouped together, ~ts ~ts/~B was previously defined (~ts:~B)",
+    [Kind, Kind, Name, Arity, OrigFile, OrigLine]);
 
 format_error({changed_kind,{Name,Arity,Previous,Current}}) ->
   io_lib:format("~ts ~ts/~B already defined as ~ts", [Current, Name, Arity, Previous]).

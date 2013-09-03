@@ -23,6 +23,13 @@ defmodule Mix.VersionTest do
     refute P.valid_requirement?(P.lexer("& 1.0.0", []))
   end
 
+  test :parse do
+    assert V.Schema[major: 1, minor: 0, patch: 0] = V.parse("1")
+    assert V.Schema[major: 1, minor: 2, patch: 0] = V.parse("1.2")
+    assert V.Schema[major: 1, minor: 2, patch: 3] = V.parse("1.2.3")
+    assert V.Schema[major: 1, minor: 4, patch: 0, pre: "5-g3318bd5"] = V.parse("1.4-5-g3318bd5")
+  end
+
   test :== do
     assert V.match?("2.3", "2.3")
     refute V.match?("2.4", "2.3")
@@ -56,7 +63,9 @@ defmodule Mix.VersionTest do
 
     assert V.match?("1.2.3", "> 1.2.3-alpha")
     assert V.match?("1.2.3-alpha.1", "> 1.2.3-alpha")
+    assert V.match?("1.2.3-alpha.beta.sigma", "> 1.2.3-alpha.beta")
     refute V.match?("1.2.3-alpha.10", "< 1.2.3-alpha.1")
+    refute V.match?("0.10.2-dev", "> 0.10.2")
   end
 
   test :>= do
@@ -72,6 +81,8 @@ defmodule Mix.VersionTest do
     assert V.match?("2.2", "< 2.3")
     refute V.match?("2.4", "< 2.3")
     refute V.match?("2.3", "< 2.3")
+
+    assert V.match?("0.10.2-dev", "< 0.10.2")
   end
 
   test :<= do

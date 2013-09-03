@@ -1,5 +1,5 @@
 defmodule String do
-  @moduledoc %B"""
+  @moduledoc %S"""
   A String in Elixir is a UTF-8 encoded binary.
 
   ## String and binary operations
@@ -9,15 +9,15 @@ defmodule String do
   `capitalize/1`, `downcase/1`, `strip/1` are provided by this
   module.
 
-  Besides this module, Elixir provides more low-level
+  In addition to this module, Elixir provides more low-level
   operations that work directly with binaries. Some
   of those can be found in the `Kernel` module, as:
 
-  * `Kernel.binary_part/2` and `Kernelbinary_part/3` - retrieves part of the binary
+  * `Kernel.binary_part/3` - retrieves part of the binary
   * `Kernel.bit_size/1` and `Kernel.byte_size/1` - size related functions
   * `Kernel.is_bitstring/1` and `Kernel.is_binary/1` - type checking function
   * Plus a number of conversion functions, like `Kernel.binary_to_atom/2`,
-    `Kernel.binary_to_integer/2`, `Kernel.binary_to_term/1` and their opposite
+    `Kernel.binary_to_integer/2`, `Kernel.binary_to_term/1` and their inverses,
     like `Kernel.integer_to_binary/2`
 
   Finally, the [`:binary` module](http://erlang.org/doc/man/binary.html)
@@ -138,67 +138,6 @@ defmodule String do
   def printable?(<<>>), do: true
   def printable?(_),    do: false
 
-  @doc %B"""
-  Escape the given string. It expects one extra paremeter
-  representing the string surrounds which should also be escaped.
-
-  ## Examples
-
-      iex> String.escape("abc", ?")
-      "abc"
-
-      iex> String.escape("a\nb", ?")
-      "a\\nb"
-
-  """
-  def escape(other, char) do
-    escape(other, char, <<>>)
-  end
-
-  @compile { :inline, escape: 3 }
-
-  defp escape(<<>>, _char, binary), do: binary
-
-  defp escape(<< char, t :: binary >>, char, binary) do
-    escape(t, char, << binary :: binary, ?\\, char >>)
-  end
-  defp escape(<<?#, ?{, t :: binary>>, char, binary) do
-    escape(t, char, << binary :: binary, ?\\, ?#, ?{ >>)
-  end
-  defp escape(<<?\a, t :: binary>>, char, binary) do
-    escape(t, char, << binary :: binary, ?\\, ?a >>)
-  end
-  defp escape(<<?\b, t :: binary>>, char, binary) do
-    escape(t, char, << binary :: binary, ?\\, ?b >>)
-  end
-  defp escape(<<?\d, t :: binary>>, char, binary) do
-    escape(t, char, << binary :: binary, ?\\, ?d >>)
-  end
-  defp escape(<<?\e, t :: binary>>, char, binary) do
-    escape(t, char, << binary :: binary, ?\\, ?e >>)
-  end
-  defp escape(<<?\f, t :: binary>>, char, binary) do
-    escape(t, char, << binary :: binary, ?\\, ?f >>)
-  end
-  defp escape(<<?\n, t :: binary>>, char, binary) do
-    escape(t, char, << binary :: binary, ?\\, ?n >>)
-  end
-  defp escape(<<?\r, t :: binary>>, char, binary) do
-    escape(t, char, << binary :: binary, ?\\, ?r >>)
-  end
-  defp escape(<<?\\, t :: binary>>, char, binary) do
-    escape(t, char, << binary :: binary, ?\\, ?\\ >>)
-  end
-  defp escape(<<?\t, t :: binary>>, char, binary) do
-    escape(t, char, << binary :: binary, ?\\, ?t >>)
-  end
-  defp escape(<<?\v, t :: binary>>, char, binary) do
-    escape(t, char, << binary :: binary, ?\\, ?v >>)
-  end
-  defp escape(<<h, t :: binary>>, char, binary) do
-    escape(t, char, << binary :: binary, h >>)
-  end
-
   @doc """
   Splits a string on substrings at each Unicode whitespace
   occurrence with leading and trailing whitespace ignored.
@@ -224,12 +163,17 @@ defmodule String do
   The string is split into as many parts as possible by
   default, unless the `global` option is set to `false`.
 
+  Empty strings are only removed from the result if the
+  `trim` option is set to `true`.
+
   ## Examples
 
       iex> String.split("a,b,c", ",")
       ["a", "b", "c"]
       iex> String.split("a,b,c", ",", global: false)
       ["a", "b,c"]
+      iex> String.split(" a b c ", " ", trim: true)
+      ["a", "b", "c"]
 
       iex> String.split("1,2 3,4", [" ", ","])
       ["1", "2", "3", "4"]
@@ -249,12 +193,18 @@ defmodule String do
   def split("", _pattern, _options), do: [""]
 
   def split(binary, pattern, options) when is_regex(pattern) do
-    Regex.split(pattern, binary, global: options[:global])
+    Regex.split(pattern, binary, options)
   end
 
   def split(binary, pattern, options) do
     opts = if options[:global] != false, do: [:global], else: []
-    :binary.split(binary, pattern, opts)
+    splits  = :binary.split(binary, pattern, opts)
+
+    if Keyword.get(options, :trim, false) do
+      lc split inlist splits, split != "", do: split
+    else
+      splits
+    end
   end
 
   @doc """
@@ -343,7 +293,7 @@ defmodule String do
   # Do a quick check before we traverse the whole
   # binary. :binary.last is a fast operation (it
   # does not traverse the whole binary).
-  def rstrip(string, char) do
+  def rstrip(string, char) when char in 0..127 do
     if :binary.last(string) == char do
       do_rstrip(string, "", char)
     else
@@ -351,12 +301,16 @@ defmodule String do
     end
   end
 
-  defp do_rstrip(<<char, string :: binary>>, buffer, char) do
-    do_rstrip(string, <<char, buffer :: binary>>, char)
+  def rstrip(string, char) do
+    do_rstrip(string, "", char)
   end
 
-  defp do_rstrip(<<char, string :: binary>>, buffer, another_char) do
-    <<buffer :: binary, char, do_rstrip(string, "", another_char) :: binary>>
+  defp do_rstrip(<<char :: utf8, string :: binary>>, buffer, char) do
+    <<do_rstrip(string, <<char :: utf8, buffer :: binary>>, char) :: binary>>
+  end
+
+  defp do_rstrip(<<char :: utf8, string :: binary>>, buffer, another_char) do
+    <<buffer :: binary, char :: utf8, do_rstrip(string, "", another_char) :: binary>>
   end
 
   defp do_rstrip(<<>>, _, _) do
@@ -387,7 +341,7 @@ defmodule String do
 
   @spec lstrip(t, char) :: t
 
-  def lstrip(<<char, rest :: binary>>, char) do
+  def lstrip(<<char :: utf8, rest :: binary>>, char) do
     <<lstrip(rest, char) :: binary>>
   end
 
@@ -427,14 +381,81 @@ defmodule String do
     rstrip(lstrip(string, char), char)
   end
 
-  @doc """
+  @doc %S"""
+  Returns a new string of length `len` with `subject` right justified and
+  padded with `padding`. If `padding` is not present, it defaults to
+  whitespace. When `len` is less than the length of `subject`, `subject` is
+  returned.
+
+  ## Examples
+
+      iex> String.rjust("abc", 5)
+      "  abc"
+      iex> String.rjust("abc", 5, ?-)
+      "--abc"
+
+  """
+  @spec rjust(t, pos_integer) :: t
+  @spec rjust(t, pos_integer, char) :: t
+
+  def rjust(subject, len) do
+    rjust(subject, len, ?\s)
+  end
+
+  def rjust(subject, len, padding) when is_integer(padding) do
+    do_justify(subject, len, padding, :right)
+  end
+
+  @doc %S"""
+  Returns a new string of length `len` with `subject` left justified and padded
+  with `padding`. If `padding` is not present, it defaults to whitespace. When
+  `len` is less than the length of `subject`, `subject` is returned.
+
+  ## Examples
+
+      iex> String.ljust("abc", 5)
+      "abc  "
+      iex> String.ljust("abc", 5, ?-)
+      "abc--"
+
+  """
+  @spec ljust(t, pos_integer) :: t
+  @spec ljust(t, pos_integer, char) :: t
+
+  def ljust(subject, len) do
+    ljust(subject, len, ?\s)
+  end
+
+  def ljust(subject, len, padding) when is_integer(padding) do
+    do_justify(subject, len, padding, :left)
+  end
+
+  defp do_justify(subject, 0, _padding, _type) do
+    subject
+  end
+
+  defp do_justify(subject, len, padding, type) when is_integer(padding) do
+    subject_len = String.length(subject)
+
+    cond do
+      subject_len >= len ->
+        subject
+      subject_len < len ->
+        fill = String.duplicate(<<padding :: utf8>>, len - subject_len)
+
+        case type do
+          :left  -> subject <> fill
+          :right -> fill <> subject
+        end
+    end
+  end
+
+  @doc %S"""
   Returns a new binary based on `subject` by replacing the parts
-  matching `pattern` for `replacement`. By default, it replaces
+  matching `pattern` by `replacement`. By default, it replaces
   all entries, except if the `global` option is set to `false`.
 
-  If the replaced part must be used in `replacement`, then the
-  position or the positions where it is to be inserted must be
-  specified by using the option `insert_replaced`.
+  A `pattern` may be a string or a regex.
 
   ## Examples
 
@@ -442,6 +463,19 @@ defmodule String do
       "a-b-c"
       iex> String.replace("a,b,c", ",", "-", global: false)
       "a-b,c"
+
+  The pattern can also be a regex. In those cases, one can give `\N`
+  in the `replacement` string to access a specific catpure in the regex:
+
+      iex> String.replace("a,b,c", %r/,(.)/, ",\\1\\1")
+      "a,bb,cc"
+
+  Notice we had to escape the escape character `\`. By giving `&`,
+  one can inject the whole matched pattern in the replacement string.
+
+  When strings are used as a pattern, a developer can also use the
+  replaced part inside the `replacement` via the `:insert_replaced` option:
+
       iex> String.replace("a,b,c", "b", "[]", insert_replaced: 1)
       "a,[b],c"
       iex> String.replace("a,b,c", ",", "[]", insert_replaced: 2)
@@ -453,7 +487,13 @@ defmodule String do
   @spec replace(t, t, t) :: t
   @spec replace(t, t, t, Keyword.t) :: t
 
-  def replace(subject, pattern, replacement, options // []) do
+  def replace(subject, pattern, replacement, options // [])
+
+  def replace(subject, pattern, replacement, options) when is_regex(pattern) do
+    Regex.replace(pattern, subject, replacement, global: options[:global])
+  end
+
+  def replace(subject, pattern, replacement, options) do
     opts = translate_replace_options(options)
     :binary.replace(subject, pattern, replacement, opts)
   end
@@ -490,7 +530,7 @@ defmodule String do
     do_reverse(String.Unicode.next_grapheme(rest), [grapheme|acc])
   end
 
-  defp do_reverse(:no_grapheme, acc), do: list_to_binary(acc)
+  defp do_reverse(:no_grapheme, acc), do: iolist_to_binary(acc)
 
   @doc """
   Returns a binary `subject` duplicated `n` times.
@@ -547,7 +587,7 @@ defmodule String do
   @spec next_codepoint(t) :: {codepoint, t} | :no_codepoint
   defdelegate next_codepoint(string), to: String.Unicode
 
-  @doc %B"""
+  @doc %S"""
   Checks whether `str` contains only valid characters.
 
   ## Examples
@@ -578,7 +618,7 @@ defmodule String do
   def valid?(<<>>), do: true
   def valid?(_), do: false
 
-  @doc %B"""
+  @doc %S"""
   Checks whether `str` is a valid character.
 
   All characters are codepoints, but some codepoints
@@ -602,7 +642,7 @@ defmodule String do
   def valid_character?(<<_ :: utf8>> = codepoint), do: valid?(codepoint)
   def valid_character?(_), do: false
 
-  @doc %B"""
+  @doc %S"""
   Checks whether `str` is a valid codepoint.
 
   Note that the empty string is considered invalid, as are
@@ -786,11 +826,18 @@ defmodule String do
   """
   @spec slice(t, integer, integer) :: grapheme | nil
 
-  def slice(string, start, len) when start >= 0 do
+  def slice(string, start, 0) do
+    case abs(start) <= String.length(string) do
+      true -> ""
+      false -> nil
+    end
+  end
+
+  def slice(string, start, len) when start >= 0 and len >= 0 do
     do_slice(next_grapheme(string), start, start + len - 1, 0, "")
   end
 
-  def slice(string, start, len) when start < 0 do
+  def slice(string, start, len) when start < 0 and len >= 0 do
     real_start_pos = do_length(next_grapheme(string)) - abs(start)
     case real_start_pos >= 0 do
       true -> do_slice(next_grapheme(string), real_start_pos, real_start_pos + len - 1, 0, "")
@@ -843,18 +890,17 @@ defmodule String do
   @spec to_integer(t) :: {integer, t} | :error
 
   def to_integer(string) do
-    {result, remainder} = :string.to_integer(binary_to_list(string))
+    {result, remainder} = :string.to_integer(:binary.bin_to_list(string))
     case result do
       :error -> :error
-      _ -> {result, list_to_binary(remainder)}
+      _ -> {result, :binary.list_to_bin(remainder)}
     end
   end
 
   @doc """
   Converts a string to a float. If successful, returns a
-  tuple of the form `{float, remainder of string}`. If unsuccessful,
-  returns `:error`. If given an integer value, will return
-  the same value as `to_integer/1`.
+  tuple of the form `{float, remainder of string}`.
+  If unsuccessful, returns `:error`.
 
   ## Examples
 
@@ -871,16 +917,16 @@ defmodule String do
   @spec to_float(t) :: {integer, t} | :error
 
   def to_float(string) do
-    charlist = binary_to_list(string)
+    charlist = :binary.bin_to_list(string)
     {result, remainder} = :string.to_float(charlist)
     case result do
       :error ->
         {int_result, int_remainder} = :string.to_integer(charlist)
         case int_result do
           :error -> :error
-          _ -> {:erlang.float(int_result), list_to_binary(int_remainder)}
+          _ -> {:erlang.float(int_result), :binary.list_to_bin(int_remainder)}
         end
-      _ -> {result, list_to_binary(remainder)}
+      _ -> {result, :binary.list_to_bin(remainder)}
     end
   end
 
@@ -1022,7 +1068,7 @@ defmodule String do
 
   """
   @spec to_char_list(String.t) :: { :ok, char_list } | { :error, list, binary } | { :incomplete, list, binary }
-  def to_char_list(string) do
+  def to_char_list(string) when is_binary(string) do
     case :unicode.characters_to_list(string) do
       result when is_list(result) ->
         { :ok, result }
@@ -1051,7 +1097,7 @@ defmodule String do
 
   """
   @spec to_char_list!(String.t) :: char_list | no_return
-  def to_char_list!(string) do
+  def to_char_list!(string) when is_binary(string) do
     case :unicode.characters_to_list(string) do
       result when is_list(result) ->
         result
@@ -1076,7 +1122,7 @@ defmodule String do
 
   """
   @spec from_char_list(char_list) :: { :ok, String.t } | { :error, binary, binary } | { :incomplete, binary, binary }
-  def from_char_list(list) do
+  def from_char_list(list) when is_list(list) do
     case :unicode.characters_to_binary(list) do
       result when is_binary(result) ->
         { :ok, result }
@@ -1103,7 +1149,7 @@ defmodule String do
 
   """
   @spec from_char_list!(char_list) :: String.t | no_return
-  def from_char_list!(list) do
+  def from_char_list!(list) when is_list(list) do
     case :unicode.characters_to_binary(list) do
       result when is_binary(result) ->
         result

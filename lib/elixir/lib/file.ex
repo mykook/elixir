@@ -33,14 +33,14 @@ end
 
 defexception File.Error, [reason: nil, action: "", path: nil] do
   def message(exception) do
-    formatted = list_to_binary(:file.format_error(reason exception))
+    formatted = iolist_to_binary(:file.format_error(reason exception))
     "could not #{action exception} #{path exception}: #{formatted}"
   end
 end
 
 defexception File.CopyError, [reason: nil, action: "", source: nil, destination: nil, on: nil] do
   def message(exception) do
-    formatted = list_to_binary(:file.format_error(reason exception))
+    formatted = iolist_to_binary(:file.format_error(reason exception))
     location  = if on = on(exception), do: ". #{on}", else: ""
     "could not #{action exception} from #{source exception} to " <>
       "#{destination exception}#{location}: #{formatted}"
@@ -49,7 +49,7 @@ end
 
 defexception File.IteratorError, reason: nil do
   def message(exception) do
-    formatted = list_to_binary(:file.format_error(reason exception))
+    formatted = iolist_to_binary(:file.format_error(reason exception))
     "error during file iteration: #{formatted}"
   end
 end
@@ -167,7 +167,7 @@ defmodule File do
     case mkdir(path) do
       :ok -> :ok
       { :error, reason } ->
-        raise File.Error, reason: reason, action: "make directory", path: :unicode.characters_to_binary(path)
+        raise File.Error, reason: reason, action: "make directory", path: to_string(path)
     end
   end
 
@@ -192,7 +192,7 @@ defmodule File do
     case mkdir_p(path) do
       :ok -> :ok
       { :error, reason } ->
-        raise File.Error, reason: reason, action: "make directory (with -p)", path: :unicode.characters_to_binary(path)
+        raise File.Error, reason: reason, action: "make directory (with -p)", path: to_string(path)
     end
   end
 
@@ -225,7 +225,7 @@ defmodule File do
       { :ok, binary } ->
         binary
       { :error, reason } ->
-        raise File.Error, reason: reason, action: "read file", path: :unicode.characters_to_binary(path)
+        raise File.Error, reason: reason, action: "read file", path: to_string(path)
     end
   end
 
@@ -260,7 +260,7 @@ defmodule File do
     case stat(path, opts) do
       {:ok, info}      -> info
       {:error, reason} ->
-        raise File.Error, reason: reason, action: "read file stats", path: :unicode.characters_to_binary(path)
+        raise File.Error, reason: reason, action: "read file stats", path: to_string(path)
     end
   end
 
@@ -280,7 +280,7 @@ defmodule File do
     case write_stat(path, stat, opts) do
       :ok -> :ok
       { :error, reason } ->
-        raise File.Error, reason: reason, action: "write file stats", path: :unicode.characters_to_binary(path)
+        raise File.Error, reason: reason, action: "write file stats", path: to_string(path)
     end
   end
 
@@ -290,8 +290,11 @@ defmodule File do
   """
   def touch(path, time // :calendar.local_time) do
     case F.change_time(path, time) do
-      { :error, :enoent } -> write(path, "")
-      other -> other
+      { :error, :enoent } ->
+        write(path, "")
+        F.change_time(path, time)
+      other ->
+        other
     end
   end
 
@@ -303,7 +306,7 @@ defmodule File do
     case touch(path, time) do
       :ok -> :ok
       { :error, reason } ->
-        raise File.Error, reason: reason, action: "touch", path: :unicode.characters_to_binary(path)
+        raise File.Error, reason: reason, action: "touch", path: to_string(path)
     end
   end
 
@@ -342,7 +345,7 @@ defmodule File do
       { :ok, bytes_count } -> bytes_count
       { :error, reason } ->
         raise File.CopyError, reason: reason, action: "copy",
-          source: :unicode.characters_to_binary(source), destination: :unicode.characters_to_binary(destination)
+          source: to_string(source), destination: to_string(destination)
     end
   end
 
@@ -389,12 +392,12 @@ defmodule File do
       :ok -> :ok
       { :error, reason } ->
         raise File.CopyError, reason: reason, action: "copy recursively",
-          source: :unicode.characters_to_binary(source),
-          destination: :unicode.characters_to_binary(destination)
+          source: to_string(source),
+          destination: to_string(destination)
     end
   end
 
-  @doc %B"""
+  @doc %S"""
   Copies the contents in source to destination.
   Similar to the command `cp -r` in Unix systems,
   this function behaves differently depending
@@ -464,8 +467,8 @@ defmodule File do
       { :ok, files } -> files
       { :error, reason, file } ->
         raise File.CopyError, reason: reason, action: "copy recursively",
-          source: :unicode.characters_to_binary(source),
-          destination: :unicode.characters_to_binary(destination),
+          source: to_string(source),
+          destination: to_string(destination),
           on: file
     end
   end
@@ -473,13 +476,13 @@ defmodule File do
   # src may be a file or a directory, dest is definitely
   # a directory. Returns nil unless an error is found.
   defp do_cp_r(src, dest, callback, acc) when is_list(acc) do
-    case :elixir.file_type(src) do
+    case :elixir_utils.file_type(src) do
       { :ok, :regular } ->
         do_cp_file(src, dest, callback, acc)
       { :ok, :symlink } ->
         case F.read_link(src) do
           { :ok, link } -> do_cp_link(link, src, dest, callback, acc)
-          { :error, reason } -> { :error, reason, :unicode.characters_to_binary(src) }
+          { :error, reason } -> { :error, reason, to_string(src) }
         end
       { :ok, :directory } ->
         case F.list_dir(src) do
@@ -489,12 +492,12 @@ defmodule File do
                 Enum.reduce(files, [dest|acc], fn(x, acc) ->
                   do_cp_r(FN.join(src, x), FN.join(dest, x), callback, acc)
                 end)
-              { :error, reason } -> { :error, reason, :unicode.characters_to_binary(dest) }
+              { :error, reason } -> { :error, reason, to_string(dest) }
             end
-          { :error, reason } -> { :error, reason, :unicode.characters_to_binary(src) }
+          { :error, reason } -> { :error, reason, to_string(src) }
         end
       { :ok, _ } -> { :error, :eio, src }
-      { :error, reason } -> { :error, reason, :unicode.characters_to_binary(src) }
+      { :error, reason } -> { :error, reason, to_string(src) }
     end
   end
 
@@ -523,12 +526,12 @@ defmodule File do
             { :ok, _ } ->
               copy_file_mode!(src, dest)
               [dest|acc]
-            { :error, reason } -> { :error, reason, :unicode.characters_to_binary(src) }
+            { :error, reason } -> { :error, reason, to_string(src) }
           end
         else
           acc
         end
-      { :error, reason } -> { :error, reason, :unicode.characters_to_binary(src) }
+      { :error, reason } -> { :error, reason, to_string(src) }
     end
   end
 
@@ -542,12 +545,12 @@ defmodule File do
           rm(dest)
           case F.make_symlink(link, dest) do
             :ok -> [dest|acc]
-            { :error, reason } -> { :error, reason, :unicode.characters_to_binary(src) }
+            { :error, reason } -> { :error, reason, to_string(src) }
           end
         else
           acc
         end
-      { :error, reason } -> { :error, reason, :unicode.characters_to_binary(src) }
+      { :error, reason } -> { :error, reason, to_string(src) }
     end
   end
 
@@ -576,7 +579,7 @@ defmodule File do
     case F.write_file(path, content, modes) do
       :ok -> :ok
       { :error, reason } ->
-        raise File.Error, reason: reason, action: "write to file", path: :unicode.characters_to_binary(path)
+        raise File.Error, reason: reason, action: "write to file", path: to_string(path)
     end
   end
 
@@ -613,7 +616,7 @@ defmodule File do
     case rm(path) do
       :ok -> :ok
       { :error, reason } ->
-        raise File.Error, reason: reason, action: "remove file", path: :unicode.characters_to_binary(path)
+        raise File.Error, reason: reason, action: "remove file", path: to_string(path)
     end
   end
 
@@ -623,7 +626,7 @@ defmodule File do
 
   ## Examples
 
-      File.rddir('tmp_dir')
+      File.rmdir('tmp_dir')
       #=> :ok
 
       File.rmdir('file.txt')
@@ -641,7 +644,7 @@ defmodule File do
     case rmdir(path) do
       :ok -> :ok
       { :error, reason } ->
-        raise File.Error, reason: reason, action: "remove directory", path: :unicode.characters_to_binary(path)
+        raise File.Error, reason: reason, action: "remove directory", path: to_string(path)
     end
   end
 
@@ -651,7 +654,7 @@ defmodule File do
   files are simply ignored (i.e. doesn't make this function fail).
 
   Returns `{ :ok, files_and_directories }` with all files and
-  directories removed in no specific order, `{ :error, reason }`
+  directories removed in no specific order, `{ :error, reason, file }`
   otherwise.
 
   ## Examples
@@ -669,7 +672,7 @@ defmodule File do
 
   defp do_rm_rf(path, { :ok, acc } = entry) do
     case safe_list_dir(path) do
-      { :ok, files } ->
+      { :ok, files } when is_list(files) ->
         res =
           Enum.reduce files, entry, fn(file, tuple) ->
             do_rm_rf(FN.join(path, file), tuple)
@@ -680,18 +683,15 @@ defmodule File do
             case rmdir(path) do
               :ok -> { :ok, [path|acc] }
               { :error, :enoent } -> res
-              reason -> { :error, reason, :unicode.characters_to_binary(path) }
+              { :error, reason } -> { :error, reason, to_string(path) }
             end
-          reason -> { :error, reason, :unicode.characters_to_binary(path) }
+          reason ->
+            reason
         end
-      { :error, reason } when reason in [:enotdir, :eio] ->
-        case rm(path) do
-          :ok -> { :ok, [path|acc] }
-          { :error, reason } when reason in [:enoent, :enotdir] -> entry
-          reason -> { :error, reason, :unicode.characters_to_binary(path) }
-        end
-      { :error, :enoent } -> entry
-      { :error, reason } -> { :error, reason, :unicode.characters_to_binary(path) }
+      { :ok, :directory } -> do_rm_directory(path, entry)
+      { :ok, :regular } -> do_rm_regular(path, entry)
+      { :error, reason } when reason in [:enoent, :enotdir] -> entry
+      { :error, reason } -> { :error, reason, to_string(path) }
     end
   end
 
@@ -699,10 +699,40 @@ defmodule File do
     reason
   end
 
+  defp do_rm_regular(path, { :ok, acc } = entry) do
+    case rm(path) do
+      :ok -> { :ok, [path|acc] }
+      { :error, :enoent } -> entry
+      { :error, reason } -> { :error, reason, to_string(path) }
+    end
+  end
+
+  # On windows, symlinks are treated as directory and must be removed
+  # with rmdir/1. But on Unix, we remove them via rm/1. So we first try
+  # to remove it as a directory and, if we get :enotdir, we fallback to
+  # a file removal.
+  defp do_rm_directory(path, { :ok, acc } = entry) do
+    case rmdir(path) do
+      :ok -> { :ok, [path|acc] }
+      { :error, :enotdir } -> do_rm_regular(path, entry)
+      { :error, :enoent } -> entry
+      { :error, reason } -> { :error, reason, to_string(path) }
+    end
+  end
+
   defp safe_list_dir(path) do
-    case F.read_link(path) do
-      { :ok, _ } -> { :error, :enotdir }
-      _ -> F.list_dir(path)
+    case :elixir_utils.file_type(path) do
+      { :ok, :symlink } ->
+        case :elixir_utils.file_type(path, :read_file_info) do
+          { :ok, :directory } -> { :ok, :directory }
+          _ -> { :ok, :regular }
+        end
+      { :ok, :directory } ->
+        F.list_dir(path)
+      { :ok, _ } ->
+        { :ok, :regular }
+      { :error, reason } ->
+        { :error, reason }
     end
   end
 
@@ -716,7 +746,7 @@ defmodule File do
       { :error, reason, _ } ->
         raise File.Error, reason: reason,
           action: "remove files and directories recursively from",
-          path: :unicode.characters_to_binary(path)
+          path: to_string(path)
     end
   end
 
@@ -756,7 +786,7 @@ defmodule File do
               or if data is read by a function that returns data in a format that cannot cope
               with the character range of the data, an error occurs and the file will be closed.
 
-  If a function is given to modes (instead of a list), it dispatches to `open/3`.
+  If a function is given two modes (instead of a list), it dispatches to `open/3`.
 
   Check http://www.erlang.org/doc/man/file.html#open-2 for more information about
   other options like `read_ahead` and `delayed_write`.
@@ -830,7 +860,7 @@ defmodule File do
     case open(path, modes) do
       { :ok, device }    -> device
       { :error, reason } ->
-        raise File.Error, reason: reason, action: "open", path: :unicode.characters_to_binary(path)
+        raise File.Error, reason: reason, action: "open", path: to_string(path)
     end
   end
 
@@ -842,7 +872,7 @@ defmodule File do
     case open(path, modes, function) do
       { :ok, device }    -> device
       { :error, reason } ->
-        raise File.Error, reason: reason, action: "open", path: :unicode.characters_to_binary(path)
+        raise File.Error, reason: reason, action: "open", path: to_string(path)
     end
   end
 
@@ -854,7 +884,7 @@ defmodule File do
   """
   def cwd() do
     case F.get_cwd do
-      { :ok, cwd } -> { :ok, :unicode.characters_to_binary(cwd) }
+      { :ok, base } -> { :ok, String.from_char_list!(base) }
       { :error, _ } = error -> error
     end
   end
@@ -864,7 +894,7 @@ defmodule File do
   """
   def cwd!() do
     case F.get_cwd do
-      { :ok, cwd } -> :unicode.characters_to_binary(cwd)
+      { :ok, cwd } -> to_string(cwd)
       { :error, reason } ->
           raise File.Error, reason: reason, action: "get current working directory"
     end
@@ -885,7 +915,7 @@ defmodule File do
     case F.set_cwd(path) do
       :ok -> :ok
       { :error, reason } ->
-          raise File.Error, reason: reason, action: "set current working directory to", path: :unicode.characters_to_binary(path)
+          raise File.Error, reason: reason, action: "set current working directory to", path: to_string(path)
     end
   end
 
@@ -915,7 +945,7 @@ defmodule File do
   """
   def ls(path // ".") do
     case F.list_dir(path) do
-      { :ok, file_list } -> { :ok, Enum.map(file_list, :unicode.characters_to_binary(&1)) }
+      { :ok, file_list } -> { :ok, Enum.map(file_list, to_string(&1)) }
       { :error, _ } = error -> error
     end
   end
@@ -928,7 +958,7 @@ defmodule File do
     case ls(dir) do
       { :ok, value } -> value
       { :error, reason } ->
-        raise File.Error, reason: reason, action: "list directory", path: :unicode.characters_to_binary(dir)
+        raise File.Error, reason: reason, action: "list directory", path: to_string(dir)
     end
   end
 
@@ -945,16 +975,18 @@ defmodule File do
   end
 
   @doc """
-  Opens the given `file` with the given `mode` and
-  returns its stream. The returned stream will
-  fail for the same reasons as `File.open!`. Note
-  that the file is opened when the iteration begins.
+  Opens the given `file` with the given `mode` and returns
+  a stream for each `:line` (default) or for a given number
+  of bytes given by `line_or_bytes`.
+
+  The returned stream will fail for the same reasons as `File.open!`.
+  Note that the file is opened only when streaming begins.
   """
-  def stream!(file, mode // []) do
+  def stream!(file, mode // [], line_or_bytes // :line) do
     fn(acc, fun) ->
       device = open!(file, mode)
       try do
-        IO.stream(device, acc, fun)
+        IO.stream(device, line_or_bytes, acc, fun)
       after
         F.close(device)
       end
@@ -962,16 +994,18 @@ defmodule File do
   end
 
   @doc """
-  Opens the given `file` with the given `mode` and
-  returns its binstream. The returned stream will
-  fail for the same reasons as `open!/2`. Note
-  that the file is opened when the iteration begins.
+  Opens the given `file` with the given `mode` and returns
+  a binstream for each `:line` (default) or for a given number
+  of bytes given by `line_or_bytes`.
+
+  The returned stream will fail for the same reasons as `File.open!`.
+  Note that the file is opened only when streaming begins.
   """
-  def binstream!(file, mode // []) do
+  def binstream!(file, mode // [], line_or_bytes // :line) do
     fn(fun, acc) ->
       device = open!(file, mode)
       try do
-        IO.binstream(device, fun, acc)
+        IO.binstream(device, line_or_bytes, fun, acc)
       after
         F.close(device)
       end
@@ -994,7 +1028,7 @@ defmodule File do
     case chmod(file, mode) do
       :ok -> :ok
       { :error, reason } ->
-        raise File.Error, reason: reason, action: "change mode for", path: :unicode.characters_to_binary(file)
+        raise File.Error, reason: reason, action: "change mode for", path: to_string(file)
     end
   end
 
@@ -1014,7 +1048,7 @@ defmodule File do
     case chgrp(file, gid) do
       :ok -> :ok
       { :error, reason } ->
-        raise File.Error, reason: reason, action: "change group for", path: :unicode.characters_to_binary(file)
+        raise File.Error, reason: reason, action: "change group for", path: to_string(file)
     end
   end
 
@@ -1034,7 +1068,7 @@ defmodule File do
     case chown(file, gid) do
       :ok -> :ok
       { :error, reason } ->
-        raise File.Error, reason: reason, action: "change owner for", path: :unicode.characters_to_binary(file)
+        raise File.Error, reason: reason, action: "change owner for", path: to_string(file)
     end
   end
 

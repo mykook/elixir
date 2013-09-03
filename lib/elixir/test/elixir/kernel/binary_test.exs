@@ -32,6 +32,17 @@ bar
     """
   end
 
+  test :heredoc_with_interpolation do
+    assert "37\n" == """
+    #{__ENV__.line}
+    """
+
+    assert "\n42\n" == """
+
+    #{__ENV__.line}
+    """
+  end
+
   test :utf8 do
     assert size(" ゆんゆん") == 13
   end
@@ -69,8 +80,9 @@ bar
   end
 
   test :match do
-    assert is_match?("ab", ?a)
-    assert not is_match?("cd", ?a)
+    assert match?(<< ?a, _ :: binary >>, "ab")
+    refute match?(<< ?a, _ :: binary >>, "cd")
+    assert match?(<< _ :: utf8 >> <> _, "éf")
   end
 
   test :interpolation do
@@ -84,13 +96,22 @@ bar
     assert <<_a, _b :: size(s)>> = "foo"
   end
 
+  test :pattern_match_with_splice do
+    assert << 1, <<2, 3, 4>>, 5 >> = <<1, 2, 3, 4, 5>>
+  end
+
   test :partial_application do
     assert (<< &1, 2 >>).(1) == << 1, 2 >>
     assert (<< &1, &2 >>).(1, 2) == << 1, 2 >>
     assert (<< &2, &1 >>).(2, 1) == << 1, 2 >>
   end
 
-  test :bitsyntax_with_utf do
+  test :literal do
+    assert <<106, 111, 115, 101>> == << "jose" :: binary >>
+    assert <<106, 111, 115, 101>> == << "jose" :: bits >>
+    assert <<106, 111, 115, 101>> == << "jose" :: bitstring >>
+    assert <<106, 111, 115, 101>> == << "jose" :: bytes >>
+
     assert <<106, 111, 115, 101>> == << "jose" :: utf8 >>
     assert <<106, 111, 115, 101>> == << 'jose' :: utf8 >>
 
@@ -102,6 +123,20 @@ bar
 
     assert <<0, 0, 0, 106, 0, 0, 0, 111, 0, 0, 0, 115, 0, 0, 0, 101>> == << "jose" :: utf32 >>
     assert <<0, 0, 0, 106, 0, 0, 0, 111, 0, 0, 0, 115, 0, 0, 0, 101>> == << 'jose' :: utf32 >>
+  end
+
+  test :literal_errors do
+    assert_raise ArgumentError, fn ->
+      Code.eval_string(%s[<< "foo" :: integer >>])
+    end
+
+    assert_raise ArgumentError, fn ->
+      Code.eval_string(%s[<< "foo" :: float >>])
+    end
+
+    assert_raise ArgumentError, fn ->
+      Code.eval_string(%s[<< 'foo' :: binary >>])
+    end
   end
 
   @binary   "new "
@@ -145,13 +180,5 @@ bar
        refb :: binary,
        size(sec_data) :: [size(1) | signed_16],
        sec_data :: binary >>
-  end
-
-  defp is_match?(<<char, _ :: binary>>, char) do
-    true
-  end
-
-  defp is_match?(_, _) do
-    false
   end
 end

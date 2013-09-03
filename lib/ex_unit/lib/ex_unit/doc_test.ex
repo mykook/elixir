@@ -130,9 +130,9 @@ defmodule ExUnit.DocTest do
   This macro is auto-imported with every `ExUnit.Case`.
   """
   defmacro doctest(mod, opts // []) do
-    quote do
-      lc { name, test } inlist unquote(__MODULE__).__doctests__(unquote(mod), unquote(opts)) do
-        def name, quote(do: [_]), [], do: test
+    quote bind_quoted: binding do
+      lc { name, test } inlist ExUnit.DocTest.__doctests__(mod, opts) do
+        def unquote(name)(_), do: unquote(test)
       end
     end
   end
@@ -169,7 +169,7 @@ defmodule ExUnit.DocTest do
 
   defp test_content(Test[exprs: exprs, line: line, fun_arity: fun_arity], module, do_import) do
     file     = module.__info__(:compile)[:source]
-    location = [line: line, file: Path.relative_to(file, System.cwd!)]
+    location = [line: line, file: Path.relative_to_cwd(file)]
     stack    = Macro.escape [{ module, :__MODULE__, 0, location }]
 
     exc_filter_fn = fn
@@ -216,12 +216,12 @@ defmodule ExUnit.DocTest do
         error ->
           raise ExUnit.ExpectationError,
             [ prelude: "Expected doctest",
-              description: unquote(whole_expr),
+              expr: unquote(whole_expr),
               expected: unquote(exception),
               # We're using a combined message here because all expressions
               # (those that are expected to raise and those that aren't) are in
               # the same try block above.
-              reason: "complete or raise",
+              assertion: "complete or raise",
               actual: inspect(elem(error, 0)) <> " with message " <> inspect(error.message) ],
             stack
       end
@@ -239,9 +239,9 @@ defmodule ExUnit.DocTest do
         actual ->
           raise ExUnit.ExpectationError,
             [ prelude: "Expected doctest",
-              description: unquote(expr),
+              expr: unquote(expr),
               expected: inspect(v),
-              reason: "evaluate to",
+              assertion: "evaluate to",
               actual: inspect(actual) ],
             unquote(stack)
       end
@@ -259,9 +259,9 @@ defmodule ExUnit.DocTest do
         v = unquote(expr_ast)
         raise ExUnit.ExpectationError,
           [ prelude: "Expected doctest",
-            description: expr,
+            expr: expr,
             expected: exception,
-            reason: "raise",
+            assertion: "raise",
             actual: inspect(v) ],
           stack
       rescue
@@ -269,9 +269,9 @@ defmodule ExUnit.DocTest do
           unless error.message == unquote(message) do
             raise ExUnit.ExpectationError,
               [ prelude: "Expected doctest",
-                description: expr,
+                expr: expr,
                 expected: exception,
-                reason: "raise",
+                assertion: "raise",
                 actual: inspect(elem(error, 0)) <> " with message " <> inspect(error.message) ],
               stack
           end
@@ -287,7 +287,7 @@ defmodule ExUnit.DocTest do
   end
 
   defp string_to_quoted(module, line, file, expr) do
-    location = [line: line, file: Path.relative_to(file, System.cwd!)]
+    location = [line: line, file: Path.relative_to_cwd(file)]
     stack    = Macro.escape [{ module, :__MODULE__, 0, location }]
     try do
       Code.string_to_quoted!(expr, line: line, file: file)
@@ -295,9 +295,9 @@ defmodule ExUnit.DocTest do
       quote do
         raise ExUnit.ExpectationError,
           [ prelude: "Expected doctest",
-            description: unquote(String.strip(expr)),
+            expr: unquote(String.strip(expr)),
             expected: "successfully",
-            reason: "compile",
+            assertion: "compile",
             actual: unquote("** #{inspect e.__record__(:name)} #{e.message}") ],
           unquote(stack)
       end
@@ -311,7 +311,7 @@ defmodule ExUnit.DocTest do
 
     docs = lc doc inlist module.__info__(:docs) do
       extract_from_doc(doc)
-    end |> List.concat
+    end |> Enum.concat
 
     moduledocs ++ docs
   end
@@ -331,8 +331,59 @@ defmodule ExUnit.DocTest do
   end
 
   defp extract_tests(line, doc) do
-    lines = String.split(doc, %r/\n/) |> Enum.map(&String.strip/1)
+    lines = String.split(doc, %r/\n/, trim: false) |> adjust_indent
     extract_tests(lines, line, "", "", [], true)
+  end
+
+  defp adjust_indent(lines) do
+    adjust_indent(lines, [], 0, false, false)
+  end
+
+  defp adjust_indent([], adjusted_lines, _indent, _follows_iex_prompt, _is_code) do
+    Enum.reverse adjusted_lines
+  end
+
+  # If hit the first prompt line, set indent and enable follows_iex_prompt/is_code. Else, skip it.
+  defp adjust_indent([line|rest] = lines, adjusted_lines, indent, false, false) do
+    case Regex.match? %r/\Aiex/, String.lstrip(line) do
+      true  -> adjust_indent(lines, adjusted_lines, set_indent(line, indent), true, true)
+      false -> adjust_indent(rest, [line|adjusted_lines], indent, false, false)
+    end
+  end
+
+  # If hit an empty line while is_code, disable is_code.
+  defp adjust_indent([""|rest], adjusted_lines, indent, follows_prompt, true) do
+    adjust_indent(rest, [""|adjusted_lines], indent, follows_prompt, false)
+  end
+
+  # Hit a non follow_iex_prompt line while is_code, strip it.
+  defp adjust_indent([line|rest], adjusted_lines, indent, false, true) do
+    adjust_indent(rest, [strip_indent(line, indent)|adjusted_lines], indent, false, true)
+  end
+
+  # If hit a non-empty line while follows_prompt, check indentation.
+  defp adjust_indent([line|rest], adjusted_lines, indent, true, true) do
+    striped_line = strip_indent(line, indent)
+
+    if striped_line != String.lstrip(line) do
+      raise Error, message: "indentation level mismatch: \"#{striped_line}\", should have been #{indent} spaces"
+    end
+
+    case Regex.match? %r/\Aiex|\A\.\.\./, String.lstrip(line) do
+      true  -> adjust_indent(rest, [striped_line|adjusted_lines], indent, true, true)
+      false -> adjust_indent(rest, [striped_line|adjusted_lines], indent, false, true)
+    end
+  end
+
+  defp set_indent(line, current_indent) do
+    case Regex.run %r/iex/, line, return: :index do
+      [{pos, _len}] -> pos
+      nil -> current_indent
+    end
+  end
+
+  defp strip_indent(line, indent) do
+    line |> String.slice(indent, String.length(line))
   end
 
   defp extract_tests([], _line, "", "", [], _) do

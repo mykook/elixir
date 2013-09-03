@@ -2,13 +2,14 @@ defmodule Kernel.CLI do
   @moduledoc false
 
   defrecord Config, commands: [], output: ".", compile: [],
-                    halt: true, compiler_options: [], errors: []
+                    halt: true, compiler_options: [], errors: [],
+                    verbose_compile: false
 
   @doc """
   This is the API invoked by Elixir boot process.
   """
   def main(argv) do
-    argv = lc arg inlist argv, do: :unicode.characters_to_binary(arg)
+    argv = lc arg inlist argv, do: String.from_char_list!(arg)
 
     { config, argv } = process_argv(argv, Kernel.CLI.Config.new)
     System.argv(argv)
@@ -152,6 +153,10 @@ defmodule Kernel.CLI do
     process_shared t, config
   end
 
+  defp process_shared([erl|t], config) when erl in ["--detached", "--hidden"] do
+    process_shared t, config
+  end
+
   defp process_shared(list, config) do
     { list, config }
   end
@@ -211,6 +216,10 @@ defmodule Kernel.CLI do
 
   defp process_compiler(["--warnings-as-errors"|t], config) do
     process_compiler t, config.update_compiler_options([{:warnings_as_errors, true}|&1])
+  end
+  
+  defp process_compiler(["--verbose"|t], config) do
+    process_compiler t, config.verbose_compile(true)
   end
 
   defp process_compiler([h|t] = list, config) do
@@ -333,13 +342,13 @@ defmodule Kernel.CLI do
     :filelib.ensure_dir(:filename.join(config.output, "."))
 
     files = Enum.map patterns, Path.wildcard(&1)
-    files = Enum.uniq(List.concat(files))
+    files = Enum.uniq(Enum.concat(files))
     files = Enum.filter files, :filelib.is_regular(&1)
 
     if files != [] do
       Code.compiler_options(config.compiler_options)
       Kernel.ParallelCompiler.files_to_path(files, config.output,
-        each_file: fn file -> IO.puts "Compiled #{file}" end)
+        each_file: fn file -> if config.verbose_compile do IO.puts "Compiled #{file}" end end)
       :ok
     else
       { :error, "--compile : No files matched patterns #{Enum.join(patterns, ",")}" }

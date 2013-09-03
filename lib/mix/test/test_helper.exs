@@ -19,7 +19,7 @@ defmodule MixTest.Case do
     Mix.Shell.Process.flush
     Mix.Deps.Converger.clear_cache
     System.put_env("MIX_HOME", tmp_path(".mix"))
-    del_tmp_paths
+    delete_tmp_paths
     :ok
   end
 
@@ -50,12 +50,6 @@ defmodule MixTest.Case do
     end
   end
 
-  def del_tmp_paths do
-    tmp = tmp_path |> binary_to_list
-    to_remove = Enum.filter :code.get_path, fn(path) -> :string.str(path, tmp) != 0 end
-    Enum.map to_remove, :code.del_path(&1)
-  end
-
   def in_tmp(which, function) do
     path = tmp_path(which)
     File.rm_rf! path
@@ -76,7 +70,7 @@ defmodule MixTest.Case do
   def in_fixture(which, tmp, function) do
     src  = Path.join fixture_path(which), "."
     dest = tmp_path(tmp)
-    flag = tmp_path |> :unicode.characters_to_list
+    flag = tmp_path |> String.to_char_list!
 
     File.rm_rf!(dest)
     File.mkdir_p!(dest)
@@ -95,6 +89,12 @@ defmodule MixTest.Case do
         end
       end
     end
+  end
+
+  defp delete_tmp_paths do
+    tmp = tmp_path |> String.to_char_list!
+    to_remove = Enum.filter :code.get_path, fn(path) -> :string.str(path, tmp) != 0 end
+    Enum.map to_remove, :code.del_path(&1)
   end
 end
 

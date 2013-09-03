@@ -29,6 +29,12 @@ defmodule Regex.BinaryTest do
     { :ok, regex } = Regex.compile("foo")
     assert is_regex(regex)
     assert { :error, _ } = Regex.compile("*foo")
+    assert { :error, _ } = Regex.compile("foo", "y")
+  end
+
+  test :compile_with_erl_opts do
+    { :ok, regex } = Regex.compile("foo\\sbar", [:dotall, {:newline, :anycrlf}])
+    assert "foo\nbar" =~ regex
   end
 
   test :source do
@@ -112,7 +118,8 @@ defmodule Regex.BinaryTest do
     assert Regex.split(%r" ", "foo bar baz") == ["foo", "bar", "baz"]
     assert Regex.split(%r" ", "foo bar baz", parts: 2) == ["foo", "bar baz"]
     assert Regex.split(%r"\s", "foobar") == ["foobar"]
-    assert Regex.split(%r" ", "foo bar baz") == ["foo", "bar", "baz"]
+    assert Regex.split(%r" ", " foo bar baz ") == ["", "foo", "bar", "baz", ""]
+    assert Regex.split(%r" ", " foo bar baz ", trim: true) == ["foo", "bar", "baz"]
     assert Regex.split(%r"=", "key=") == ["key", ""]
     assert Regex.split(%r"=", "=value") == ["", "value"]
   end

@@ -1,5 +1,5 @@
 defmodule Dict do
-  @moduledoc %B"""
+  @moduledoc %S"""
   This module specifies the Dict API expected to be
   implemented by different dictionaries. It also provides
   functions that redirect to the underlying Dict, allowing
@@ -11,25 +11,21 @@ defmodule Dict do
 
       HashDict.new  #=> creates an empty HashDict
 
-  For simplicity's sake, in the examples below everytime
-  `new` is used, it implies one of the module-specific
-  calls like above. Likewise, when the result of a function
-  invocation is shown in the form `[a: 1, b: 2]`, it implies
-  that the returned value is actually of the same dict type
-  as the input one.
+  In the examples below, `dict_impl` means a specific
+  `Dict` implementation, for example `HashDict` or `ListDict`.
 
   ## Protocols
 
   Besides implementing the functions in this module, all
-  dictionaries are also required to implement the `Access`
+  dictionaries are required to implement the `Access`
   protocol:
 
-      iex> dict = HashDict.new
+      iex> dict = dict_impl.new
       ...> dict = Dict.put(dict, :hello, :world)
       ...> dict[:hello]
       :world
 
-  And also the `Enumerable` protocol, allowing one to write:
+  And the `Enumerable` protocol, allowing one to write:
 
       Enum.each(dict, fn ({ k, v }) ->
         IO.puts "#{k}: #{v}"
@@ -44,12 +40,16 @@ defmodule Dict do
   @type keys :: [ key ]
   @type t :: tuple | list
 
+  defcallback new :: t
+  defcallback new(Keyword.t) :: t
   defcallback delete(t, key) :: t
   defcallback drop(t, keys) :: t
   defcallback empty(t) :: t
   defcallback equal?(t, t) :: boolean
   defcallback get(t, key) :: value
   defcallback get(t, key, value) :: value
+  defcallback fetch(t, key) :: { :ok, value } | :error
+  defcallback fetch!(t, key) :: value | no_return
   defcallback has_key?(t, key) :: boolean
   defcallback keys(t) :: list(key)
   defcallback merge(t, t) :: t
@@ -62,9 +62,10 @@ defmodule Dict do
   defcallback split(t, keys) :: {t, t}
   defcallback take(t, keys) :: t
   defcallback to_list(t) :: list()
-  defcallback update(t, key, (value -> value)) :: t | no_return
   defcallback update(t, key, value, (value -> value)) :: t
+  defcallback update!(t, key, (value -> value)) :: t | no_return
   defcallback values(t) :: list(value)
+  defcallback reduce(t, any, ({key, value}, any -> any)) :: any
 
   defmacrop target(dict) do
     quote do
@@ -80,13 +81,12 @@ defmodule Dict do
   end
 
   @doc """
-  Returns a list containing all dict's keys.
-  The keys are not guaranteed to be sorted, unless
-  the underlying dict implementation defines so.
+  Returns a list of all keys in `dict`.
+  The keys are not guaranteed to be in any order.
 
   ## Examples
 
-      iex> d = HashDict.new([a: 1, b: 2])
+      iex> d = dict_impl.new([a: 1, b: 2])
       ...> Enum.sort(Dict.keys(d))
       [:a,:b]
 
@@ -97,11 +97,12 @@ defmodule Dict do
   end
 
   @doc """
-  Returns a list containing all dict's values.
+  Returns a list of all values in `dict`
+  The values are not guaranteed to be in any order.
 
   ## Examples
 
-      iex> d = HashDict.new([a: 1, b: 2])
+      iex> d = dict_impl.new([a: 1, b: 2])
       ...> Enum.sort(Dict.values(d))
       [1,2]
 
@@ -116,7 +117,7 @@ defmodule Dict do
 
   ## Examples
 
-      iex> d = HashDict.new([a: 1, b: 2])
+      iex> d = dict_impl.new([a: 1, b: 2])
       ...> Dict.size(d)
       2
 
@@ -127,11 +128,11 @@ defmodule Dict do
   end
 
   @doc """
-  Returns whether the given key exists in the given dict.
+  Returns whether the given `key` exists in the given `dict`.
 
   ## Examples
 
-      iex> d = HashDict.new([a: 1])
+      iex> d = dict_impl.new([a: 1])
       iex> Dict.has_key?(d, :a)
       true
       iex> Dict.has_key?(d, :b)
@@ -145,11 +146,11 @@ defmodule Dict do
 
   @doc """
   Returns the value associated with `key` in `dict`. If `dict` does not
-  contain `key`, returns `default` (or nil if not provided).
+  contain `key`, returns `default` (or `nil` if not provided).
 
   ## Examples
 
-      iex> d = HashDict.new([a: 1])
+      iex> d = dict_impl.new([a: 1])
       iex> Dict.get(d, :a)
       1
       iex> Dict.get(d, :b)
@@ -162,18 +163,13 @@ defmodule Dict do
     target(dict).get(dict, key, default)
   end
 
-  @doc false
-  def get!(dict, key) do
-    target(dict).get!(dict, key)
-  end
-
   @doc """
-  Returns the `{ :ok, value }` associated with `key` in `dict`.
+  Returns `{ :ok, value }` associated with `key` in `dict`.
   If `dict` does not contain `key`, returns `:error`.
 
   ## Examples
 
-      iex> d = HashDict.new([a: 1])
+      iex> d = dict_impl.new([a: 1])
       iex> Dict.fetch(d, :a)
       { :ok, 1 }
       iex> Dict.fetch(d, :b)
@@ -191,7 +187,7 @@ defmodule Dict do
 
   ## Examples
 
-      iex> d = HashDict.new([a: 1])
+      iex> d = dict_impl.new([a: 1])
       iex> Dict.fetch!(d, :a)
       1
       iex> Dict.fetch!(d, :b)
@@ -209,7 +205,7 @@ defmodule Dict do
 
   ## Examples
 
-      iex> d = HashDict.new([a: 1, b: 2])
+      iex> d = dict_impl.new([a: 1, b: 2])
       ...> d = Dict.put(d, :a, 3)
       ...> Dict.get(d, :a)
       3
@@ -225,7 +221,7 @@ defmodule Dict do
 
   ## Examples
 
-      iex> d = HashDict.new([a: 1, b: 2])
+      iex> d = dict_impl.new([a: 1, b: 2])
       ...> d = Dict.put_new(d, :a, 3)
       ...> Dict.get(d, :a)
       1
@@ -237,17 +233,17 @@ defmodule Dict do
   end
 
   @doc """
-  Removes the entry stored under the given key from `dict`.
+  Removes the entry stored under the given `key` from `dict`.
   If `dict` does not contain `key`, returns the dictionary unchanged.
 
   ## Examples
 
-      iex> d = HashDict.new([a: 1, b: 2])
+      iex> d = dict_impl.new([a: 1, b: 2])
       ...> d = Dict.delete(d, :a)
       ...> Dict.get(d, :a)
       nil
 
-      iex> d = HashDict.new([b: 2])
+      iex> d = dict_impl.new([b: 2])
       ...> Dict.delete(d, :a) == d
       true
 
@@ -258,13 +254,17 @@ defmodule Dict do
   end
 
   @doc """
-  Merges the given enum into the dict. In case one of the enum entries
-  alread exist in the dict, it is given higher preference.
+  Merges the given `enum` into `dict`. If one of the `enum` keys
+  already exists in `dict`, the `dict` value is replaced by the `enum`
+  value.
+
+  The `enum` must yield tuples with two elements on enumeration,
+  where the first element represents the key and the second the value.
 
   ## Examples
 
-      iex> d1 = HashDict.new([a: 1, b: 2])
-      ...> d2 = HashDict.new([a: 3, d: 4])
+      iex> d1 = dict_impl.new([a: 1, b: 2])
+      ...> d2 = dict_impl.new([a: 3, d: 4])
       ...> d = Dict.merge(d1, d2)
       ...> [a: Dict.get(d, :a), b: Dict.get(d, :b), d: Dict.get(d, :d)]
       [a: 3, b: 2, d: 4]
@@ -276,14 +276,17 @@ defmodule Dict do
   end
 
   @doc """
-  Merges the given enum into the dict. In case one of the enum entries
-  alread exist in the dict, the given function is invoked to solve
-  conflicts.
+  Merges the given `enum` into `dict`. If one of the `enum` entries
+  already exists in `dict`, the given function is invoked to resolve
+  the conflict.
+
+  The `enum` must yield tuples with two elements on enumeration,
+  where the first element represents the key and the second the value.
 
   ## Examples
 
-      iex> d1 = HashDict.new([a: 1, b: 2])
-      ...> d2 = HashDict.new([a: 3, d: 4])
+      iex> d1 = dict_impl.new([a: 1, b: 2])
+      ...> d2 = dict_impl.new([a: 3, d: 4])
       ...> d = Dict.merge(d1, d2, fn(_k, v1, v2) ->
       ...>   v1 + v2
       ...> end)
@@ -302,17 +305,17 @@ defmodule Dict do
 
   ## Examples
 
-      iex> dict = HashDict.new [a: 1]
+      iex> dict = dict_impl.new [a: 1]
       ...> {v, d} = Dict.pop dict, :a
       ...> {v, Enum.sort(d)}
       {1,[]}
 
-      iex> dict = HashDict.new [a: 1]
+      iex> dict = dict_impl.new [a: 1]
       ...> {v, d} = Dict.pop dict, :b
       ...> {v, Enum.sort(d)}
       {nil,[a: 1]}
 
-      iex> dict = HashDict.new [a: 1]
+      iex> dict = dict_impl.new [a: 1]
       ...> {v, d} = Dict.pop dict, :b, 3
       ...> {v, Enum.sort(d)}
       {3,[a: 1]}
@@ -329,13 +332,18 @@ defmodule Dict do
 
   ## Examples
 
-      iex> d = HashDict.new([a: 1, b: 2])
-      ...> d = Dict.update(d, :a, fn(val) -> -val end)
+      iex> d = dict_impl.new([a: 1, b: 2])
+      ...> d = Dict.update!(d, :a, fn(val) -> -val end)
       ...> Dict.get(d, :a)
       -1
 
   """
-  @spec update(t, key, (value -> value)) :: t
+  @spec update!(t, key, (value -> value)) :: t
+  def update!(dict, key, fun) do
+    target(dict).update!(dict, key, fun)
+  end
+
+  @doc false
   def update(dict, key, fun) do
     target(dict).update(dict, key, fun)
   end
@@ -347,7 +355,7 @@ defmodule Dict do
 
   ## Examples
 
-      iex> d = HashDict.new([a: 1, b: 2])
+      iex> d = dict_impl.new([a: 1, b: 2])
       ...> d = Dict.update(d, :c, 3, fn(val) -> -val end)
       ...> Dict.get(d, :c)
       3
@@ -367,17 +375,17 @@ defmodule Dict do
 
   ## Examples
 
-      iex> d = HashDict.new([a: 1, b: 2])
-      ...> { d1, d2 } = Dict.split(d, [:a, :c])
+      iex> d = dict_impl.new([a: 1, b: 2, c: 3, d: 4])
+      ...> { d1, d2 } = Dict.split(d, [:a, :c, :e])
       ...> { Dict.to_list(d1), Dict.to_list(d2) }
-      { [a: 1], [b: 2] }
+      { [a: 1, c: 3], [b: 2, d: 4] }
 
-      iex> d = HashDict.new([])
+      iex> d = dict_impl.new([])
       ...> { d1, d2 } = Dict.split(d, [:a, :c])
       ...> { Dict.to_list(d1), Dict.to_list(d2) }
       { [], [] }
 
-      iex> d = HashDict.new([a: 1, b: 2])
+      iex> d = dict_impl.new([a: 1, b: 2])
       ...> { d1, d2 } = Dict.split(d, [:a, :b, :c])
       ...> { Dict.to_list(d1), Dict.to_list(d2) }
       { [a: 1, b: 2], [] }
@@ -394,12 +402,12 @@ defmodule Dict do
 
   ## Examples
 
-      iex> d = HashDict.new([a: 1, b: 2])
+      iex> d = dict_impl.new([a: 1, b: 2])
       ...> d = Dict.drop(d, [:a, :c, :d])
       ...> Dict.to_list(d)
       [b: 2]
 
-      iex> d = HashDict.new([a: 1, b: 2])
+      iex> d = dict_impl.new([a: 1, b: 2])
       ...> d = Dict.drop(d, [:c, :d])
       ...> Dict.to_list(d)
       [a: 1, b: 2]
@@ -412,11 +420,12 @@ defmodule Dict do
 
   @doc """
   Returns a new dict where only the keys in `keys` from `dict` are
-  included. Any non-member keys are ignored.
+  included. 
+  Any non-member keys are ignored.
 
   ## Examples
 
-      iex> d = HashDict.new([a: 1, b: 2])
+      iex> d = dict_impl.new([a: 1, b: 2])
       ...>
       ...> d = Dict.take(d, [:a, :c, :d])
       ...> Dict.to_list(d)
@@ -434,6 +443,14 @@ defmodule Dict do
 
   @doc """
   Returns an empty dict of the same type as `dict`.
+
+  ## Examples
+
+      iex> d = dict_impl.new([a: 1, b: 2])
+      ...> e = Dict.empty(d)
+      ...> Dict.to_list(e)
+      []
+
   """
   @spec empty(t) :: t
   def empty(dict) do
@@ -441,17 +458,17 @@ defmodule Dict do
   end
 
   @doc """
-  Check if two dicts are equal, if the dicts are of different types they're
+  Check if two dicts are equal. If the dicts are of different types, they are
   first converted to lists.
 
   ## Examples
 
-      iex> a = HashDict.new(a: 2, b: 3, f: 5, c: 123)
+      iex> a = dict_impl.new(a: 2, b: 3, f: 5, c: 123)
       ...> b = ListDict.new(a: 2, b: 3, f: 5, c: 123)
       ...> Dict.equal?(a, b)
       true
 
-      iex> a = HashDict.new(a: 2, b: 3, f: 5, c: 123)
+      iex> a = dict_impl.new(a: 2, b: 3, f: 5, c: 123)
       ...> b = []
       ...> Dict.equal?(a, b)
       false

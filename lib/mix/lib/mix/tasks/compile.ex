@@ -73,23 +73,25 @@ defmodule Mix.Tasks.Compile do
   def run(args) do
     Mix.Task.run("loadpaths", args)
 
-    Enum.each(get_compilers, fn(compiler) ->
-      Mix.Task.run("compile.#{compiler}", args)
-    end)
+    res =
+      Enum.map(get_compilers, fn(compiler) ->
+        List.wrap Mix.Task.run("compile.#{compiler}", args)
+      end)
 
     Code.prepend_path Mix.project[:compile_path]
+    if Enum.any?(res, &(:ok in &1)), do: :ok, else: :noop
   end
 
   @doc """
   Returns manifests for all compilers.
   """
   def manifests do
-    Enum.reduce(get_compilers, [], fn(compiler, acc) ->
+    Enum.flat_map(get_compilers, fn(compiler) ->
       module = Mix.Task.get("compile.#{compiler}")
-      if function_exported?(module, :manifest, 0) do
-        [module.manifest|acc]
+      if function_exported?(module, :manifests, 0) do
+        module.manifests
       else
-        acc
+        []
       end
     end)
   end

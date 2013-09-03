@@ -13,13 +13,19 @@ defmodule Mix.Tasks.Compile.Elixir do
                    is_in_list_or_remove(source, all, beam),
                    do: entry
 
-      # Filter stale to be a subset of all
-      stale = lc i inlist stale, i in all, do: i
+      outsider = Enum.any?(stale, &not(&1 in all))
 
-      # Each entry in all that's not in the manifest is also stale
-      stale = stale ++ lc i inlist all,
-                          not Enum.any?(entries, fn { _b, _m, s, _d } -> s == i end),
-                          do: i
+      stale =
+        if outsider do
+          # Outsider files trigger whole compilation
+          all
+        else
+          # Otherwise compile only stale. Also add each entry
+          # in all that's not in the manifest is also stale
+          stale ++ lc i inlist all,
+                      not Enum.any?(entries, fn { _b, _m, s, _d } -> s == i end),
+                      do: i
+        end
 
       cond do
         stale != [] ->
@@ -27,7 +33,7 @@ defmodule Mix.Tasks.Compile.Elixir do
           { :ok, pid } = :gen_server.start_link(__MODULE__, entries, [])
 
           try do
-            do_files_to_path(pid, entries, stale, compile_path, File.cwd)
+            do_files_to_path(pid, entries, stale, compile_path, System.cwd)
             :gen_server.cast(pid, :merge)
           after
             :gen_server.call(pid, { :stop, manifest })
@@ -69,7 +75,8 @@ defmodule Mix.Tasks.Compile.Elixir do
              Module.DispatchTracker.imports(module)
       deps = deps |> :lists.usort |> Enum.map(atom_to_binary(&1))
 
-      :gen_server.cast(pid, { :store, beam, bin, Mix.Utils.relative_to_cwd(source, cwd), deps, binary })
+      relative = if cwd, do: Path.relative_to(source, cwd), else: source
+      :gen_server.cast(pid, { :store, beam, bin, relative, deps, binary })
     end
 
     defp each_file(file) do
@@ -215,7 +222,7 @@ defmodule Mix.Tasks.Compile.Elixir do
      [compile_exts: [:ex]]
      ```
 
-  * `:watch_exts` - extensions to watch in order to trigger
+  * `:elixirc_watch_exts` - extensions to watch in order to trigger
       a compilation:
 
       ```
@@ -231,7 +238,7 @@ defmodule Mix.Tasks.Compile.Elixir do
   Runs this task.
   """
   def run(args) do
-    { opts, _ } = OptionParser.parse(args, switches: @switches)
+    { opts, _, _ } = OptionParser.parse(args, switches: @switches)
 
     project       = Mix.project
     compile_path  = project[:compile_path]
@@ -242,25 +249,29 @@ defmodule Mix.Tasks.Compile.Elixir do
     manifest   = manifest()
     to_compile = Mix.Utils.extract_files(elixirc_paths, compile_exts)
     to_watch   = Mix.Utils.extract_files(elixirc_paths, watch_exts)
+    to_watch   = Mix.Project.config_files ++ Erlang.manifests ++ to_watch
 
-    check_files = Mix.Project.config_files ++ [Erlang.manifest]
+    stale = if opts[:force] || path_deps_changed?(manifest) do
+      to_compile
+    else
+      Mix.Utils.extract_stale(to_watch, [manifest])
+    end
 
-    all   = opts[:force] || Mix.Utils.stale?(check_files, [manifest]) || path_deps_changed?(manifest)
-    stale = if all, do: to_watch, else: Mix.Utils.extract_stale(to_watch, [manifest])
-
-    files_to_path(manifest, stale, to_compile, compile_path, fn ->
+    result = files_to_path(manifest, stale, to_compile, compile_path, fn ->
       File.mkdir_p!(compile_path)
       Code.prepend_path(compile_path)
       set_compiler_opts(project, opts, [])
     end)
+
+    unless result == :noop, do: Mix.Deps.Lock.touch
+    result
   end
 
   @doc """
-  The manifest for this compiler.
+  Returns Elixir manifests.
   """
-  def manifest do
-    Path.join(Mix.project[:compile_path], @manifest)
-  end
+  def manifests, do: [manifest]
+  defp manifest, do: Path.join(Mix.project[:compile_path], @manifest)
 
   @doc """
   Compiles stale Elixir files.

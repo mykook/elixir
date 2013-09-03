@@ -11,7 +11,7 @@ defmodule Mix.Tasks.Local.Uninstall do
   """
 
   def run(argv) do
-    { _, argv } = OptionParser.parse(argv)
+    { _, argv, _ } = OptionParser.parse(argv)
     Enum.each argv, do_uninstall(&1)
   end
 
@@ -35,7 +35,7 @@ defmodule Mix.Tasks.Local.Uninstall do
     case :code.where_is_file(beam) do
       :non_existing -> []
       found ->
-        :unicode.characters_to_binary(found)
+        String.from_char_list!(found)
           |> Path.split
           |> Enum.find(String.ends_with?(&1, ".ez"))
     end

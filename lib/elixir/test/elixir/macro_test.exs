@@ -39,6 +39,11 @@ defmodule MacroTest do
   test :escape_works_recursively do
     assert [1,{:{}, [], [:a,:b,:c]}, 3] == Macro.escape([1, { :a, :b, :c }, 3])
   end
+  
+  test :escape_improper do
+    assert [{:|, [], [1,2]}] == Macro.escape([1|2])
+    assert [1,{:|, [], [2,3]}] == Macro.escape([1,2|3])
+  end
 
   test :escape_with_unquote do
     contents = quote unquote: false, do: unquote(1)
@@ -283,7 +288,7 @@ defmodule MacroTest do
 
     assert Macro.to_string(quote do: (fn(x) -> y = x + 1; y end)) <> "\n" == """
     fn x ->
-      y = (x + 1)
+      y = x + 1
       y
     end
     """
@@ -291,7 +296,7 @@ defmodule MacroTest do
     assert Macro.to_string(quote do: (fn(x) -> y = x + 1; y; (z) -> z end)) <> "\n" == """
     fn
       x ->
-        y = (x + 1)
+        y = x + 1
         y
       z ->
         z
@@ -318,7 +323,9 @@ defmodule MacroTest do
 
   test :op_precedence_to_string do
     assert Macro.to_string(quote do: (1 + 2) * (3 - 4)) == "(1 + 2) * (3 - 4)"
-    assert Macro.to_string(quote do: ((1 + 2) * 3) - 4) == "((1 + 2) * 3) - 4"
+    assert Macro.to_string(quote do: ((1 + 2) * 3) - 4) == "(1 + 2) * 3 - 4"
+    assert Macro.to_string(quote do: (1 + 2 + 3) == "(1 + 2 + 3)")
+    assert Macro.to_string(quote do: (1 + 2 - 3) == "(1 + 2 - 3)")
   end
 
   test :containers_to_string do
@@ -341,6 +348,34 @@ defmodule MacroTest do
     assert Macro.to_string(quote do: @foo(bar)) == "@foo(bar)"
     assert Macro.to_string(quote do: identity(&1)) == "identity(&1)"
     assert Macro.to_string(quote do: identity(&foo)) == "identity(&foo)"
+  end
+
+  test :access_to_string do
+    assert Macro.to_string(quote do: a[b]) == "a[b]"
+    assert Macro.to_string(quote do: a[1 + 2]) == "a[1 + 2]"
+    assert Macro.to_string(quote do: Foo[bar: baz]) == "Foo[bar: baz]"
+    assert Macro.to_string(quote do: Foo[1 + 2]) == "Foo[1 + 2]"
+    assert Macro.to_string(quote do: Foo[bar: 1 + 2]) == "Foo[bar: 1 + 2]"
+  end
+
+  test :kw_list do
+    assert Macro.to_string(quote do: [a: a, b: b]) == "[a: a, b: b]"
+    assert Macro.to_string(quote do: [a: 1, b: 1 + 2]) == "[a: 1, b: 1 + 2]"
+  end
+
+  test :last_arg_kw_list do
+    assert Macro.to_string(quote do: foo(x: y)) == "foo(x: y)"
+    assert Macro.to_string(quote do: foo(x: 1 + 2)) == "foo(x: 1 + 2)"
+    assert Macro.to_string(quote do: foo(x: y, p: q)) == "foo(x: y, p: q)"
+    assert Macro.to_string(quote do: foo(a, x: y, p: q)) == "foo(a, x: y, p: q)"
+  end
+
+  test :to_string_with_fun do
+    assert Macro.to_string(quote(do: foo(1, 2, 3)), fn _, string -> ":#{string}:" end) ==
+           ":foo(:1:, :2:, :3:):"
+
+    assert Macro.to_string(quote(do: Bar.foo(1, 2, 3)), fn _, string -> ":#{string}:" end) ==
+           "::Bar:.foo(:1:, :2:, :3:):"
   end
 
   ## safe_term

@@ -113,16 +113,11 @@ defmodule Mix.Project do
   whenever such configuration files change.
   """
   def config_files do
-    opts     = []
     project  = get
-    lockfile = config[:lockfile]
-
-    if File.regular?(lockfile) do
-      opts = [lockfile|opts]
-    end
+    opts     = [Mix.Deps.Lock.manifest]
 
     if project && (source = project.__info__(:compile)[:source]) do
-      opts = [:unicode.characters_to_binary(source)|opts]
+      opts = [String.from_char_list!(source)|opts]
     end
 
     opts
@@ -206,7 +201,7 @@ defmodule Mix.Project do
     paths =
       recur(fn _ ->
         Enum.map(config[:load_paths], Path.expand(&1))
-      end) |> List.concat
+      end) |> Enum.concat
     paths ++ compile_paths
   end
 

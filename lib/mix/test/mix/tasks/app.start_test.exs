@@ -15,7 +15,25 @@ defmodule Mix.Tasks.App.StartTest do
     end
   end
 
-  test "compile and starts the project" do
+  test "recompiles project if elixir version changed" do
+    in_fixture "no_mixfile", fn ->
+      Mix.Tasks.Compile.run []
+      purge [A, B, C]
+
+      assert_received { :mix_shell, :info, ["Compiled lib/a.ex"] }
+      assert System.version == Mix.Deps.Lock.elixir_vsn
+
+      Mix.Task.clear
+      File.write!("ebin/.compile.lock", "the_past")
+      File.touch!("ebin/.compile.lock", { { 2010, 1, 1 }, { 0, 0, 0 } })
+
+      Mix.Tasks.App.Start.run ["--no-start", "--no-compile"]
+      assert System.version == Mix.Deps.Lock.elixir_vsn
+      assert File.stat!("ebin/.compile.lock").mtime > { { 2010, 1, 1 }, { 0, 0, 0 } }
+    end
+  end
+
+  test "compiles and starts the project" do
     Mix.Project.push CustomApp
 
     in_fixture "no_mixfile", fn ->

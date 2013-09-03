@@ -52,13 +52,42 @@ defmodule EnumTest.List do
     assert Enum.at([2, 4, 6], 2) == 6
     assert Enum.at([2, 4, 6], 4) == nil
     assert Enum.at([2, 4, 6], 4, :none) == :none
+    assert Enum.at([2, 4, 6], -2) == 4
+    assert Enum.at([2, 4, 6], -4) == nil
+  end
+
+  test :concat_1 do
+    assert Enum.concat([[1, [2], 3], [4], [5, 6]]) == [1, [2], 3, 4, 5, 6]
+    assert Enum.concat(1..3, []) == [1,2,3]
+
+    assert Enum.concat([[], []]) == []
+    assert Enum.concat([[]])     == []
+    assert Enum.concat([])       == []
+
+    assert Enum.concat([1..5, fn acc, _ -> acc end, [1]]) == [1,2,3,4,5,1]
+  end
+
+  test :concat_2 do
+    assert Enum.concat([], [1]) == [1]
+    assert Enum.concat([1, [2], 3], [4, 5]) == [1, [2], 3, 4, 5]
+    assert Enum.concat(1..3, []) == [1,2,3]
+
+    assert Enum.concat([], []) == []
+
+    assert Enum.concat(fn acc, _ -> acc end, [1]) == [1]
   end
 
   test :fetch! do
     assert Enum.fetch!([2, 4, 6], 0) == 2
     assert Enum.fetch!([2, 4, 6], 2) == 6
+    assert Enum.fetch!([2, 4, 6], -2) == 4
+
     assert_raise Enum.OutOfBoundsError, fn ->
       Enum.fetch!([2, 4, 6], 4)
+    end
+
+    assert_raise Enum.OutOfBoundsError, fn ->
+      Enum.fetch!([2, 4, 6], -4)
     end
   end
 
@@ -108,6 +137,8 @@ defmodule EnumTest.List do
     assert Enum.fetch([2, 4, 6], 0) == { :ok, 2 }
     assert Enum.fetch([2, 4, 6], 2) == { :ok, 6 }
     assert Enum.fetch([2, 4, 6], 4) == :error
+    assert Enum.fetch([2, 4, 6], -2) == { :ok, 4}
+    assert Enum.fetch([2, 4, 6], -4) == :error
   end
 
   test :first do
@@ -131,41 +162,38 @@ defmodule EnumTest.List do
     assert Enum.filter_map([2, 4, 6], fn(x) -> rem(x, 2) == 0 end, &1 * 2) == [4, 8, 12]
   end
 
+  test :flat_map do
+    assert Enum.flat_map([], fn(x) -> [x, x] end) == []
+    assert Enum.flat_map([1, 2, 3], fn(x) -> [x, x] end) == [1, 1, 2, 2, 3, 3]
+  end
+
   test :reduce do
     assert Enum.reduce([], 1, fn(x, acc) -> x + acc end) == 1
     assert Enum.reduce([1, 2, 3], 1, fn(x, acc) -> x + acc end) == 7
+
+    assert Enum.reduce([1, 2, 3], fn(x, acc) -> x + acc end) == 6
+    assert_raise Enum.EmptyError, fn ->
+      assert Enum.reduce([], fn(x, acc) -> x + acc end)
+    end
   end
 
-  test :join_with_bin do
+  test :join do
     assert Enum.join([], " = ") == ""
     assert Enum.join([1, 2, 3], " = ") == "1 = 2 = 3"
     assert Enum.join([1, "2", 3], " = ") == "1 = 2 = 3"
     assert Enum.join([1, 2, 3]) == "123"
   end
 
-  test :join_with_list do
-    assert Enum.join([], ' = ') == ''
-    assert Enum.join([1, 2, 3], ' = ') == '1 = 2 = 3'
-    assert Enum.join([1, "2", 3], ' = ') == '1 = 2 = 3'
-  end
-
-  test :map_join_with_bin do
+  test :map_join do
     assert Enum.map_join([], " = ", &1 * 2) == ""
     assert Enum.map_join([1, 2, 3], " = ", &1 * 2) == "2 = 4 = 6"
     assert Enum.map_join([1, 2, 3], &1 * 2) == "246"
-  end
-
-  test :map_join_with_list do
-    assert Enum.map_join([], ' = ', &1 * 2) == ''
-    assert Enum.map_join([1, 2, 3], ' = ', &1 * 2) == '2 = 4 = 6'
   end
 
   test :join_empty do
     fun = fn (acc, _) -> acc end
     assert Enum.join(fun, ".") == ""
     assert Enum.map_join(fun, ".", &1 + 0) == ""
-    assert Enum.join(fun, '.') == ''
-    assert Enum.map_join(fun, '.', &1 + 0) == ''
   end
 
   test :map do
@@ -236,25 +264,6 @@ defmodule EnumTest.List do
     assert Enum.take([], 3) == []
   end
 
-  test :take_does_not_consume_next_without_a_need do
-    import PathHelpers
-    File.open!(fixture_path("one-liner.txt"), [], fn file ->
-      iterator = IO.stream(file)
-      assert Enum.take(iterator, 1) == ["ONE"]
-      assert Enum.take(iterator, 5) == []
-    end)
-  end
-
-  test :take_with_no_item_works_as_no_op do
-    import PathHelpers
-    iterator = File.stream!(fixture_path("one-liner.txt"))
-
-    assert Enum.take(iterator, 0) == []
-    assert Enum.take(iterator, 0) == []
-    assert Enum.take(iterator, 0) == []
-    assert Enum.take(iterator, 0) == []
-  end
-
   test :take_while do
     assert Enum.take_while([1, 2, 3], fn(x) -> x > 3 end) == []
     assert Enum.take_while([1, 2, 3], fn(x) -> x <= 1 end) == [1]
@@ -293,10 +302,12 @@ defmodule EnumTest.List do
     assert_raise Enum.EmptyError, fn ->
       assert Enum.max([])
     end
+  end
 
-    assert Enum.max(["a", "aa", "aaa"], fn(x) -> String.length(x) end) == "aaa"
+  test :max_by do
+    assert Enum.max_by(["a", "aa", "aaa"], fn(x) -> String.length(x) end) == "aaa"
     assert_raise Enum.EmptyError, fn ->
-      Enum.max([], fn(x) -> String.length(x) end)
+      Enum.max_by([], fn(x) -> String.length(x) end)
     end
   end
 
@@ -307,11 +318,45 @@ defmodule EnumTest.List do
     assert_raise Enum.EmptyError, fn ->
       assert Enum.min([])
     end
+  end
 
-    assert Enum.min(["a", "aa", "aaa"], fn(x) -> String.length(x) end) == "a"
+  test :min_by do
+    assert Enum.min_by(["a", "aa", "aaa"], fn(x) -> String.length(x) end) == "a"
     assert_raise Enum.EmptyError, fn ->
-      Enum.min([], fn(x) -> String.length(x) end)
+      Enum.min_by([], fn(x) -> String.length(x) end)
     end
+  end
+
+  test :chunks do
+    assert Enum.chunks([1, 2, 3, 4, 5], 2) == [[1, 2], [3, 4]]
+    assert Enum.chunks([1, 2, 3, 4, 5], 2, 2, [6]) == [[1, 2], [3, 4], [5, 6]]
+    assert Enum.chunks([1, 2, 3, 4, 5, 6], 3, 2) == [[1, 2, 3], [3, 4, 5]]
+    assert Enum.chunks([1, 2, 3, 4, 5, 6], 2, 3) == [[1, 2], [4, 5]]
+    assert Enum.chunks([1, 2, 3, 4, 5, 6], 3, 2, []) == [[1, 2, 3], [3, 4, 5], [5, 6]]
+    assert Enum.chunks([1, 2, 3, 4, 5], 4, 4, 6..10) == [[1, 2, 3, 4], [5, 6, 7, 8]]
+  end
+
+  test :chunks_by do
+    assert Enum.chunks_by([1, 2, 2, 3, 4, 4, 6, 7, 7], &(rem(&1, 2) == 1)) == [[1], [2, 2], [3], [4, 4, 6], [7, 7]]
+    assert Enum.chunks_by([1, 2, 3, 4], fn _ -> true end) == [[1, 2, 3, 4]]
+    assert Enum.chunks_by([], fn _ -> true end) == []
+    assert Enum.chunks_by([1], fn _ -> true end) == [[1]]
+  end
+
+  test :slice do
+    assert Enum.slice([1,2,3,4,5], 0, 0) == []
+    assert Enum.slice([1,2,3,4,5], 0, 1) == [1]
+    assert Enum.slice([1,2,3,4,5], 0, 2) == [1, 2]
+    assert Enum.slice([1,2,3,4,5], 1, 2) == [2, 3]
+    assert Enum.slice([1,2,3,4,5], 1, 0) == []
+    assert Enum.slice([1,2,3,4,5], 2, 5) == [3, 4, 5]
+    assert Enum.slice([1,2,3,4,5], 5, 5) == []
+    assert Enum.slice([1,2,3,4,5], 6, 5) == nil
+    assert Enum.slice([1,2,3,4,5], 6, 0) == nil
+    assert Enum.slice([1,2,3,4,5], -6, 0) == nil
+    assert Enum.slice([1,2,3,4,5], -6, 5) == nil
+    assert Enum.slice([1,2,3,4,5], -2, 5) == [4, 5]
+    assert Enum.slice([1,2,3,4,5], -3, 1) == [3]
   end
 end
 
@@ -344,6 +389,8 @@ defmodule EnumTest.Range do
   test :fetch! do
     assert Enum.fetch!(2..6, 0) == 2
     assert Enum.fetch!(2..6, 4) == 6
+    assert Enum.fetch!(2..6, -1) == 6
+    assert Enum.fetch!(2..6, -2) == 5
     assert Enum.fetch!(-2..-6, 0) == -2
     assert Enum.fetch!(-2..-6, 4) == -6
 
@@ -353,6 +400,10 @@ defmodule EnumTest.Range do
 
     assert_raise Enum.OutOfBoundsError, fn ->
       assert Enum.fetch!(-2..-6, 8)
+    end
+
+    assert_raise Enum.OutOfBoundsError, fn ->
+      assert Enum.fetch!(2..6, -8)
     end
   end
 
@@ -398,6 +449,8 @@ defmodule EnumTest.Range do
     range = Range.new(first: 2, last: 6)
     assert Enum.find(range, fn(x) -> rem(x, 2) == 0 end) == 2
     assert Enum.find(range, fn(x) -> rem(x, 2) == 1 end) == 3
+    assert Enum.find(range, fn _ -> false end) == nil
+    assert Enum.find(range, 0, fn _ -> false end) == 0
   end
 
   test :find_value do
@@ -445,7 +498,6 @@ defmodule EnumTest.Range do
     after
       Process.delete(:enum_test_each)
     end
-
   end
 
   test :filter do
@@ -471,12 +523,20 @@ defmodule EnumTest.Range do
     assert Enum.filter_map(range, fn(x) -> rem(x, 2) == 0 end, &1 * 2) == [4, 8, 12]
   end
 
+  test :flat_map do
+    range = Range.new(first: 1, last: 3)
+    assert Enum.flat_map(range, fn(x) -> [x, x] end) == [1, 1, 2, 2, 3, 3]
+  end
+
   test :reduce do
     range = Range.new(first: 1, last: 0)
     assert Enum.reduce(range, 1, fn(x, acc) -> x + acc end) == 2
 
     range = Range.new(first: 1, last: 3)
     assert Enum.reduce(range, 1, fn(x, acc) -> x + acc end) == 7
+
+    range = Range.new(first: 1, last: 3)
+    assert Enum.reduce(range, fn(x, acc) -> x + acc end) == 6
   end
 
   test :reject do
@@ -487,7 +547,7 @@ defmodule EnumTest.Range do
     assert Enum.reject(range, fn(x) -> rem(x, 2) == 0 end) == [1, 3, 5]
   end
 
-  test :join_with_bin do
+  test :join do
     range = Range.new(first: 1, last: 0)
     assert Enum.join(range, " = ") == "1 = 0"
 
@@ -496,29 +556,13 @@ defmodule EnumTest.Range do
     assert Enum.join(range) == "123"
   end
 
-  test :join_with_list do
-    range = Range.new(first: 1, last: 0)
-    assert Enum.join(range, ' = ') == '1 = 0'
-
-    range = Range.new(first: 1, last: 3)
-    assert Enum.join(range, ' = ') == '1 = 2 = 3'
-  end
-
-  test :map_join_with_bin do
+  test :map_join do
     range = Range.new(first: 1, last: 0)
     assert Enum.map_join(range, " = ", &1 * 2) == "2 = 0"
 
     range = Range.new(first: 1, last: 3)
     assert Enum.map_join(range, " = ", &1 * 2) == "2 = 4 = 6"
     assert Enum.map_join(range, &1 * 2) == "246"
-  end
-
-  test :map_join_with_list do
-    range = Range.new(first: 1, last: 0)
-    assert Enum.map_join(range, ' = ', &1 * 2) == '2 = 0'
-
-    range = Range.new(first: 1, last: 3)
-    assert Enum.map_join(range, ' = ', &1 * 2) == '2 = 4 = 6'
   end
 
   test :map do
@@ -633,18 +677,52 @@ defmodule EnumTest.Range do
     assert Enum.max(1..1) == 1
     assert Enum.max(1..3) == 3
     assert Enum.max(3..1) == 3
+  end
 
-    assert Enum.max(1..1, fn(x) -> :math.pow(-2, x) end) == 1
-    assert Enum.max(1..3, fn(x) -> :math.pow(-2, x) end) == 2
+  test :max_by do
+    assert Enum.max_by(1..1, fn(x) -> :math.pow(-2, x) end) == 1
+    assert Enum.max_by(1..3, fn(x) -> :math.pow(-2, x) end) == 2
   end
 
   test :min do
     assert Enum.min([1]) == 1
     assert Enum.min([1, 2, 3]) == 1
     assert Enum.min([[], :a, {}]) == :a
+  end
 
-    assert Enum.min(1..1, fn(x) -> :math.pow(-2, x) end) == 1
-    assert Enum.min(1..3, fn(x) -> :math.pow(-2, x) end) == 3
+  test :min_by do
+    assert Enum.min_by(1..1, fn(x) -> :math.pow(-2, x) end) == 1
+    assert Enum.min_by(1..3, fn(x) -> :math.pow(-2, x) end) == 3
+  end
+
+  test :chunks do
+    assert Enum.chunks(1..5, 2) == [[1, 2], [3, 4]]
+    assert Enum.chunks(1..5, 2, 2, [6]) == [[1, 2], [3, 4], [5, 6]]
+    assert Enum.chunks(1..6, 3, 2) == [[1, 2, 3], [3, 4, 5]]
+    assert Enum.chunks(1..6, 2, 3) == [[1, 2], [4, 5]]
+    assert Enum.chunks(1..6, 3, 2, []) == [[1, 2, 3], [3, 4, 5], [5, 6]]
+    assert Enum.chunks(1..5, 4, 4, 6..10) == [[1, 2, 3, 4], [5, 6, 7, 8]]
+  end
+
+  test :chunks_by do
+    assert Enum.chunks_by(1..4, fn _ -> true end) == [[1, 2, 3, 4]]
+    assert Enum.chunks_by(1..4, &(rem(&1, 2) == 1)) == [[1], [2], [3], [4]]
+  end
+
+  test :slice do
+    assert Enum.slice(1..5, 0, 0) == []
+    assert Enum.slice(1..5, 0, 1) == [1]
+    assert Enum.slice(1..5, 0, 2) == [1, 2]
+    assert Enum.slice(1..5, 1, 2) == [2, 3]
+    assert Enum.slice(1..5, 1, 0) == []
+    assert Enum.slice(1..5, 2, 5) == [3, 4, 5]
+    assert Enum.slice(1..5, 5, 5) == []
+    assert Enum.slice(1..5, 6, 5) == nil
+    assert Enum.slice(1..5, 6, 0) == nil
+    assert Enum.slice(1..5, -6, 0) == nil
+    assert Enum.slice(1..5, -6, 5) == nil
+    assert Enum.slice(1..5, -2, 5) == [4, 5]
+    assert Enum.slice(1..5, -3, 1) == [3]
   end
 end
 
@@ -662,11 +740,18 @@ defmodule EnumTest.Others do
     assert Enum.count(URI.query_decoder("foo=bar&baz=bat")) == 2
   end
 
-  test :take do
-    # Use IO to simulate side-effects
+  test :sort do
+    d = HashDict.new [a: 1, another: 1, some: 1, multi_word: 1,
+                      this: 2, punctuation: 1, is: 2, sentence: 2, with: 1]
+    assert Enum.sort(d, fn({_, v1}, {_, v2}) -> v1 > v2 end) ==
+           [this: 2, is: 2, sentence: 2, with: 1, a: 1, another: 1,
+           multi_word: 1, some: 1, punctuation: 1]
+  end
+
+  test :take_with_side_effects do
     reducible = fn(acc, fun) ->
       Enum.reduce([1, 2, 3], acc, fn(x, acc) ->
-        IO.puts x
+        IO.puts to_string(x)
         fun.(x, acc)
       end)
     end
@@ -674,5 +759,24 @@ defmodule EnumTest.Others do
     assert capture_io(fn ->
       Enum.take(reducible, 1)
     end) == "1\n"
+  end
+
+  test :take_does_not_consume_next_without_a_need do
+    import PathHelpers
+    File.open!(fixture_path("one-liner.txt"), [], fn file ->
+      iterator = IO.stream(file, :line)
+      assert Enum.take(iterator, 1) == ["ONE"]
+      assert Enum.take(iterator, 5) == []
+    end)
+  end
+
+  test :take_with_no_item_works_as_no_op do
+    import PathHelpers
+    iterator = File.stream!(fixture_path("unknown.txt"))
+
+    assert Enum.take(iterator, 0) == []
+    assert Enum.take(iterator, 0) == []
+    assert Enum.take(iterator, 0) == []
+    assert Enum.take(iterator, 0) == []
   end
 end

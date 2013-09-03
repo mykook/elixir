@@ -102,7 +102,7 @@ defmodule Mix.Utils do
     end
   end
 
-  @doc %B"""
+  @doc %S"""
   Reads the given file as a manifest and returns each entry
   as a list.
 
@@ -141,7 +141,7 @@ defmodule Mix.Utils do
   end
 
   def extract_files(paths, pattern) do
-    files = List.concat(lc path inlist paths do
+    files = Enum.concat(lc path inlist paths do
       if File.regular?(path), do: [path], else: Path.wildcard("#{path}/**/#{pattern}")
     end)
     files |> exclude_files |> Enum.uniq
@@ -263,18 +263,6 @@ defmodule Mix.Utils do
   end
 
   @doc """
-  Returns the given path string relative to the current
-  working directory. In case the current working directory
-  cannot be retrieved, returns the path with no changes.
-  """
-  def relative_to_cwd(path, cwd // File.cwd) do
-    case cwd do
-      { :ok, base } -> Path.relative_to(path, base)
-      _ -> path
-    end
-  end
-
-  @doc """
   Takes a module and converts it to a command. The nesting
   argument can be given in order to remove the nesting of a
   module.
@@ -295,7 +283,7 @@ defmodule Mix.Utils do
   end
 
   def module_name_to_command(module, nesting) do
-    t = Regex.split(%r/\./, to_binary(module))
+    t = Regex.split(%r/\./, to_string(module))
     t |> Enum.drop(nesting) |> Enum.map(first_to_lower(&1)) |> Enum.join(".")
   end
 
@@ -309,7 +297,7 @@ defmodule Mix.Utils do
 
   """
   def command_to_module_name(s) do
-    Regex.split(%r/\./, to_binary(s)) |>
+    Regex.split(%r/\./, to_string(s)) |>
       Enum.map(first_to_upper(&1)) |>
       Enum.join(".")
   end
@@ -354,9 +342,9 @@ defmodule Mix.Utils do
 
     :inets.start
 
-    case :httpc.request(binary_to_list(path)) do
+    case :httpc.request(:binary.bin_to_list(path)) do
       { :ok, { { _, status, _ }, _, body } } when status in 200..299 ->
-        iolist_to_binary(body)
+        :binary.list_to_bin(body)
       { :ok, { { _, status, _ }, _, _ } } ->
         raise Mix.Error, message: "Could not access url #{path}, got status: #{status}"
       { :error, reason } ->

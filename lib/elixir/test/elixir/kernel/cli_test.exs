@@ -6,7 +6,7 @@ defmodule Kernel.CLI.InitTest do
   use ExUnit.Case, async: true
 
   test :code_init do
-    assert elixir('-e "IO.puts 3"') == '3\n'
+    assert elixir('-e "IO.puts [?3]"') == '3\n'
 
     result = elixir('-e "IO.puts inspect(System.argv)" #{fixture_path("init_sample.exs")} -o 1 2 3')
     assert result == '#{inspect ["-o", "1", "2", "3"]}\n3\n'
@@ -18,7 +18,7 @@ defmodule Kernel.CLI.OptionParsingTest do
 
   test :path do
     root = fixture_path("../../..") |> to_char_list
-    list = elixir('-pa "#{root}/*" -pz "#{root}/lib/*" -e "IO.inspect :code.get_path"')
+    list = elixir('-pa "#{root}/*" -pz "#{root}/lib/*" -e "IO.inspect(:code.get_path, limit: :infinity)"')
     { path, _ } = Code.eval_string list, []
 
     # pa
@@ -55,9 +55,8 @@ end
 defmodule Kernel.CLI.SyntaxErrorTest do
   use ExUnit.Case, async: true
 
-  def check_output(elixir_cmd, expected_msg) do
+  defp check_output(elixir_cmd, expected_msg) do
     o = elixir(elixir_cmd)
-    expected_msg = :unicode.characters_to_list(expected_msg)
     assert :string.str(o, expected_msg) == 1, "Expected this output: `#{expected_msg}`\nbut got this output: `#{o}`"
   end
 
@@ -72,7 +71,15 @@ defmodule Kernel.CLI.CompileTest do
 
   test :compile_code do
     fixture = fixture_path "compile_sample.ex"
-    assert elixirc('#{fixture} -o #{tmp_path}') ==
+    assert elixirc('#{fixture} -o #{tmp_path}') == ''
+    assert File.regular?(tmp_path "Elixir.CompileSample.beam")
+  after
+    File.rm(tmp_path("Elixir.CompileSample.beam"))
+  end
+
+  test :compile_code_verbose do
+    fixture = fixture_path "compile_sample.ex"
+    assert elixirc('#{fixture} -o #{tmp_path} --verbose') ==
       'Compiled #{fixture}\n'
     assert File.regular?(tmp_path "Elixir.CompileSample.beam")
   after
@@ -96,8 +103,7 @@ defmodule Kernel.CLI.ParallelCompilerTest do
   test :files do
     fixtures = [fixture_path("parallel_compiler/bar.ex"), fixture_path("parallel_compiler/foo.ex")]
     assert capture_io(fn ->
-      assert [{ Bar, bar }, { Foo, _foo }] = Kernel.ParallelCompiler.files fixtures
-      assert is_binary(bar)
+      assert [Bar, Foo] = Kernel.ParallelCompiler.files fixtures
     end) =~ "message_from_foo"
   end
 

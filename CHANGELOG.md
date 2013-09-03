@@ -1,3 +1,66 @@
+# v0.10.2 (2013-09-03)
+
+* enhancements
+  * [CLI] Add `--verbose` to elixirc, which now is non-verbose by default
+  * [Dict] Add `Dict.Behaviour` as a convenience to create your own dictionaries
+  * [Enum] Add `Enum.split/2`, `Enum.reduce/2`, `Enum.flat_map/2`, `Enum.chunks/2`, `Enum.chunks/4`, `Enum.chunks_by/2`, `Enum.concat/1` and `Enum.concat/2`
+  * [Enum] Support negative indices in `Enum.at/fetch/fetch!`
+  * [ExUnit] Show failures on CLIFormatter as soon as they pop up
+  * [IEx] Allow for strings in `h` helper
+  * [IEx] Helpers `r` and `c` can handle erlang sources
+  * [Integer] Add `odd?/1` and `even?/1`
+  * [IO] Added support to specifying a number of bytes to stream to `IO.stream`, `IO.binstream`, `File.stream!` and `File.binstream!`
+  * [Kernel] Include file and line on error report for overriding an existing function/macro
+  * [Kernel] Convert external functions into quoted expressions. This allows record fields to contain functions as long as they point to an `&Mod.fun/arity`
+  * [Kernel] Allow `foo?` and `bar!` as valid variable names
+  * [List] Add `List.replace_at/3`
+  * [Macro] Improve printing of the access protocol on `Macro.to_string/1`
+  * [Macro] Add `Macro.to_string/2` to support annotations on the converted string
+  * [Mix] Automatically recompile a project if the Elixir version changes
+  * [Path] Add `Path.relative_to_cwd/2`
+  * [Regex] Allow erlang `re` options when compiling Elixir regexes
+  * [Stream] Add `Stream.concat/1`, `Stream.concat/2` and `Stream.flat_map/2`
+  * [String] Add regex pattern support to `String.replace/3`
+  * [String] Add `String.ljust/2`, `String.rjust/2`, `String.ljust/3` and `String.rjust/3`
+  * [URI] `URI.parse/1` supports IPv6 addresses
+
+* bug fix
+  * [Behaviour] Do not compile behaviour docs if docs are disabled on compilation
+  * [ExUnit] Doctests no longer eat too much space and provides detailed reports for poorly indented lines
+  * [File] Fix a bug where `File.touch(file, datetime)` was not setting the proper datetime when the file did not exist
+  * [Kernel] Limit `inspect` results to 50 items by default to avoid printing too much data
+  * [Kernel] Return a readable error on oversized atoms
+  * [Kernel] Allow functions ending with `?` or `!` to be captured
+  * [Kernel] Fix default shutdown of child supervisors to `:infinity`
+  * [Kernel] Fix regression when calling a function/macro ending with bang, followed by `do/end` blocks
+  * [List] Fix bug on `List.insert_at/3` that added the item at the wrong position for negative indexes
+  * [Macro] `Macro.escape/2` can now escape improper lists
+  * [Mix] Fix `Mix.Version` matching on pre-release info
+  * [Mix] Ensure `watch_exts` trigger full recompilation on change with `mix compile`
+  * [Mix] Fix regression on `mix clean --all`
+  * [String] `String.strip/2` now supports removing unicode characters
+  * [String] `String.slice/3` still returns the proper result when there is no length to be extracted
+  * [System] `System.get_env/0` now returns a list of tuples as previously advertised
+
+* deprecations
+  * [Dict] `Dict.update/3` is deprecated in favor of `Dict.update!/3`
+  * [Enum] `Enum.min/2` and `Enum.max/2` are deprecated in favor of `Enum.min_by/2` and `Enum.max_by/2`
+  * [Enum] `Enum.join/2` and `Enum.map_join/3` with a char list are deprecated
+  * [IO] `IO.stream(device)` and `IO.binstream(device)` are deprecated in favor of `IO.stream(device, :line)` and `IO.binstream(device, :line)`
+  * [Kernel] `list_to_binary/1`, `binary_to_list/1` and `binary_to_list/3` are deprecated in favor of `String.from_char_list!/1` and `String.to_char_list!/1` for characters and `:binary.list_to_bin/1`, `:binary.bin_to_list/1` and `:binary.bin_to_list/3` for bytes
+  * [Kernel] `to_binary/1` is deprecated in favor of `to_string/1`
+  * [Kernel] Deprecate `def/4` and friends in favor of `def/2` with unquote and friends
+  * [Kernel] Deprecate `%b` and `%B` in favor of `%s` and `%S`
+  * [List] `List.concat/2` is deprecated in favor of `Enum.concat/2`
+  * [Macro] `Macro.unescape_binary/1` and `Macro.unescape_binary/2` are deprecated in favor of `Macro.unescape_string/1` and `Macro.unescape_string/2`
+  * [Mix] `:umbrella` option for umbrella paths has been deprecated in favor of `:in_umbrella`
+
+* backwards incompatible changes
+  * [IO] IO functions now only accept iolists as arguments
+  * [Kernel] `Binary.Chars` was renamed to `String.Chars`
+  * [Kernel] The previous ambiguous import syntax `import :functions, Foo` was removed in favor of `import Foo, only: :functions`
+  * [OptionParser] `parse` and `parse_head` now returns a tuple with three elements instead of two
+
 # v0.10.1 (2013-08-03)
 
 * enhancements
@@ -6,6 +69,7 @@
   * [ExUnit] The `:trace` option now also reports run time for each test
   * [ExUnit] Add support for `:color` to enable/disable ANSI coloring
   * [IEx] Add the `clear` helper to clear the screen.
+  * [Kernel] Add the capture operator `&`
   * [Kernel] Add support for `GenFSM.Behaviour`
   * [Kernel] Functions now points to the module and function they were defined when inspected
   * [Kernel] A documentation attached to a function that is never defined now prints warnings

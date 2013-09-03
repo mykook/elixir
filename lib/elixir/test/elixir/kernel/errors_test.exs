@@ -304,7 +304,7 @@ defmodule Kernel.ErrorsTest do
   test :unrequired_macro do
     assert_compile_fail CompileError,
       "nofile:2: tried to invoke macro Kernel.ErrorsTest.UnproperMacro.unproper/1 " <>
-      "but module was not required. Required: Kernel, Kernel.Typespec, Record",
+      "but module was not required. Required: Integer, Kernel, Kernel.Typespec, Record",
       '''
       defmodule ErrorsTest do
         Kernel.ErrorsTest.UnproperMacro.unproper([])
@@ -338,14 +338,14 @@ defmodule Kernel.ErrorsTest do
       "nofile:2: could not load macros from module :lists",
       '''
       defmodule ErrorsTest do
-        import :macros, :lists
+        import :lists, only: :macros
       end
       '''
   end
 
   test :invalid_macro do
     assert_compile_fail CompileError,
-      "nofile: invalid quoted expression: {:foo, :bar, :baz, :bat}",
+      "nofile: tuples in quoted expressions must have 2 or 3 items, invalid quoted expression: {:foo, :bar, :baz, :bat}",
       '''
       defmodule ErrorsTest do
         defmacrop oops do

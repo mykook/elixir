@@ -17,21 +17,6 @@ defmodule Mix.Tasks.Compile.ElixirTest do
     end
   end
 
-  test "only recompiles if file was updated unless forced" do
-    in_fixture "no_mixfile", fn ->
-      # Compile the first time
-      assert Mix.Tasks.Compile.Elixir.run([]) == :ok
-      assert File.regular?("ebin/Elixir.A.beam")
-
-      # Now we have a noop
-      assert Mix.Tasks.Compile.Elixir.run([]) == :noop
-
-      # --force
-      purge [A, B, C]
-      assert Mix.Tasks.Compile.Elixir.run(["--force"]) == :ok
-    end
-  end
-
   test "removes old artifact files" do
     in_fixture "no_mixfile", fn ->
       assert Mix.Tasks.Compile.Elixir.run([]) == :ok
@@ -80,15 +65,12 @@ defmodule Mix.Tasks.Compile.ElixirTest do
 
   test "compiles only changed files" do
     in_fixture "no_mixfile", fn ->
-      Mix.Tasks.Compile.Elixir.run []
-      File.touch!("ebin")
-
+      assert Mix.Tasks.Compile.Elixir.run([]) == :ok
       Mix.shell.flush
       purge [A, B, C]
 
       future = { { 2020, 1, 1 }, { 0, 0, 0 } }
       File.touch!("lib/a.ex", future)
-      File.touch!("lib/a.eex", future)
       Mix.Tasks.Compile.Elixir.run []
 
       assert_received { :mix_shell, :info, ["Compiled lib/a.ex"] }
@@ -99,19 +81,48 @@ defmodule Mix.Tasks.Compile.ElixirTest do
     end
   end
 
-  test "recompile after path dependency changed" do
+  test "compiles all when other watched exts change" do
+    in_fixture "no_mixfile", fn ->
+      assert Mix.Tasks.Compile.Elixir.run([]) == :ok
+      Mix.shell.flush
+      purge [A, B, C]
+
+      future = { { 2020, 1, 1 }, { 0, 0, 0 } }
+      File.touch!("lib/a.eex", future)
+      assert Mix.Tasks.Compile.Elixir.run([]) == :ok
+
+      assert_received { :mix_shell, :info, ["Compiled lib/a.ex"] }
+      assert_received { :mix_shell, :info, ["Compiled lib/b.ex"] }
+    end
+  end
+
+  test "recompiles after path dependency changed" do
     in_fixture("umbrella_dep/deps/umbrella/apps", fn ->
       Mix.Project.in_project(:bar, "bar", fn _ ->
         Mix.Tasks.Deps.Compile.run []
-        Mix.Tasks.Compile.Elixir.run []
 
-        assert :noop == Mix.Tasks.Compile.Elixir.run []
+        assert Mix.Tasks.Compile.Elixir.run([]) == :ok
+        assert Mix.Tasks.Compile.Elixir.run([]) == :noop
         purge [Bar]
 
-        future = { { 2020, 1, 1 }, { 0, 0, 0 } }
+        future = { { 2020, 4, 17 }, { 14, 0, 0 } }
         File.touch!("../foo/ebin/.compile.elixir", future)
-        assert :ok == Mix.Tasks.Compile.Elixir.run []
+        assert Mix.Tasks.Compile.Elixir.run([]) == :ok
       end)
     end)
+  end
+
+  test "recompiles with --force" do
+    in_fixture "no_mixfile", fn ->
+      assert Mix.Tasks.Compile.Elixir.run([]) == :ok
+      purge [A, B, C]
+
+      # Now we have a noop
+      assert Mix.Tasks.Compile.Elixir.run([]) == :noop
+
+      # --force
+      assert Mix.Tasks.Compile.Elixir.run(["--force"]) == :ok
+      assert_received { :mix_shell, :info, ["Compiled lib/a.ex"] }
+    end
   end
 end

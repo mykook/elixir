@@ -19,7 +19,7 @@ defrecord Mix.Dep, [ scm: nil, app: nil, requirement: nil, status: nil, opts: ni
 end
 
 defmodule Mix.Deps do
-  @moduledoc %B"""
+  @moduledoc %S"""
   A module with common functions to work with dependencies.
 
   Dependencies must be specified in the Mix application in the
@@ -52,8 +52,8 @@ defmodule Mix.Deps do
   ## Path options (`:path`)
 
   * `:path` - The path for the dependency
-  * `:umbrella` - When true, sets a path dependency pointing to "../#{app}",
-                  sharing the same environment as the current application
+  * `:in_umbrella` - When true, sets a path dependency pointing to "../#{app}",
+                     sharing the same environment as the current application
 
   ## Internal options
 
@@ -184,10 +184,10 @@ defmodule Mix.Deps do
     do: "ok"
 
   def format_status(Mix.Dep[status: { :noappfile, path }]),
-    do: "could not find an app file at #{Mix.Utils.relative_to_cwd(path)}"
+    do: "could not find an app file at #{Path.relative_to_cwd(path)}"
 
   def format_status(Mix.Dep[status: { :invalidapp, path }]),
-    do: "the app file at #{Mix.Utils.relative_to_cwd(path)} is invalid"
+    do: "the app file at #{Path.relative_to_cwd(path)} is invalid"
 
   def format_status(Mix.Dep[status: { :invalidvsn, vsn }]),
     do: "the app file contains an invalid version: #{inspect vsn}"
@@ -203,19 +203,22 @@ defmodule Mix.Deps do
 
   def format_status(Mix.Dep[status: { :diverged, other }, opts: opts] = dep) do
     "different specs were given for this dependency, choose one in your deps:\n" <>
-    "> In #{dep.from}:\n$ #{inspect opts, pretty: true}\n" <>
-    "> In #{other.from}:\n$ #{inspect other.opts, pretty: true}\n"
+    "> In #{Path.relative_to_cwd(dep.from)}:\n$ #{inspect Dict.drop(opts, [:dest]), pretty: true}\n" <>
+    "> In #{Path.relative_to_cwd(other.from)}:\n$ #{inspect Dict.drop(other.opts, [:dest]), pretty: true}\n"
   end
 
-  def format_status(Mix.Dep[status: { :override, other }, opts: opts] = dep) do
+  def format_status(Mix.Dep[status: { :overriden, other }, opts: opts] = dep) do
     "the dependency is overriding another dependency of one of your dependencies, " <>
     "if this is intended set `override: true` in the options\n" <>
-    "> In #{dep.from}:\n$ #{inspect opts}\n" <>
-    "> In #{other.from}:\n$ #{inspect other.opts}\n"
+    "> In #{Path.relative_to_cwd(dep.from)}:\n$ #{inspect opts}\n" <>
+    "> In #{Path.relative_to_cwd(other.from)}:\n$ #{inspect other.opts}\n"
   end
 
   def format_status(Mix.Dep[status: { :unavailable, _ }]),
     do: "the dependency is not available, run `mix deps.get`"
+
+  def format_status(Mix.Dep[status: { :elixirlock, _ }]),
+    do: "the dependency is built with an out-of-date elixir version, run `mix deps.get`"
 
   @doc """
   Check the lock for the given dependency and update its status accordingly.
@@ -225,11 +228,14 @@ defmodule Mix.Deps do
       rev  = lock[app]
       opts = Keyword.put(opts, :lock, rev)
 
-      if scm.matches_lock?(opts) do
-        dep
-      else
-        status = if rev, do: { :lockmismatch, rev }, else: :nolock
-        dep.status(status)
+      cond do
+        vsn = old_elixir_lock(dep) ->
+          dep.status({ :elixirlock, vsn })
+        scm.matches_lock?(opts) ->
+          dep
+        true ->
+          status = if rev, do: { :lockmismatch, rev }, else: :nolock
+          dep.status(status)
       end
     else
       dep
@@ -250,7 +256,7 @@ defmodule Mix.Deps do
   @doc """
   Check if a dependency is available.
   """
-  def available?(Mix.Dep[status: { :override, _ }]),    do: false
+  def available?(Mix.Dep[status: { :overriden, _ }]),   do: false
   def available?(Mix.Dep[status: { :diverged, _ }]),    do: false
   def available?(Mix.Dep[status: { :unavailable, _ }]), do: false
   def available?(_), do: true
@@ -269,6 +275,7 @@ defmodule Mix.Deps do
   """
   def out_of_date?(Mix.Dep[status: { :lockmismatch, _ }]), do: true
   def out_of_date?(Mix.Dep[status: :nolock]),              do: true
+  def out_of_date?(Mix.Dep[status: { :elixirlock, _ }]),   do: true
   def out_of_date?(dep),                                   do: not available?(dep)
 
   @doc """
@@ -315,7 +322,7 @@ defmodule Mix.Deps do
 
     [ opts[:dest] | sub_dirs ]
       |> Enum.map(Path.wildcard(&1))
-      |> List.concat
+      |> Enum.concat
       |> Enum.map(Path.join(&1, "ebin"))
       |> Enum.filter(File.dir?(&1))
   end
@@ -343,5 +350,17 @@ defmodule Mix.Deps do
   """
   def make?(Mix.Dep[manager: manager]) do
     manager == :make
+  end
+
+  ## Helpers
+
+  # Returns the elixir lock version of the given dependency
+  defp old_elixir_lock(dep) do
+    in_dependency(dep, fn _ ->
+      old_vsn = Mix.Deps.Lock.elixir_vsn
+      if old_vsn && old_vsn != System.version do
+        old_vsn
+      end
+    end)
   end
 end
