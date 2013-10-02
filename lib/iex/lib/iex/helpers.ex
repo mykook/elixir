@@ -22,7 +22,6 @@ defmodule IEx.Helpers do
   * `ls/1`    — lists the contents of the specified directory
   * `m/0`     — prints loaded modules
   * `pwd/0`   — prints the current working directory
-  * `r/0`     — recompile and reload all modules that were previously reloaded
   * `r/1`     — recompiles and reloads the given module's source file
   * `s/1`     — prints spec information
   * `t/1`     — prints type information
@@ -62,8 +61,14 @@ defmodule IEx.Helpers do
       c "baz.ex"
       #=> [Baz]
   """
-  def c(files, path // ".") do
-    { erls, exs } = Enum.partition(List.wrap(files), &String.ends_with?(&1, ".erl"))
+  def c(files, path // ".") when is_binary(path) do
+    files = List.wrap(files)
+
+    unless Enum.all?(files, &is_binary/1) do
+      raise ArgumentError, message: "expected a binary or a list of binaries as argument"
+    end
+
+    { erls, exs } = Enum.partition(files, &String.ends_with?(&1, ".erl"))
 
     modules = Enum.map(erls, fn(source) ->
       { module, binary } = compile_erlang(source)
@@ -83,8 +88,8 @@ defmodule IEx.Helpers do
   end
 
   @doc """
-  Prints the list of all loaded modules with paths to their corresponding .beam
-  files.
+  Prints the list of all loaded modules with paths to
+  their corresponding `.beam` files.
   """
   def m do
     all    = Enum.map :code.all_loaded, fn { mod, file } -> { inspect(mod), file } end
@@ -260,7 +265,7 @@ defmodule IEx.Helpers do
   """
   def v do
     inspect_opts = IEx.Options.get(:inspect)
-    IEx.History.each(print_history_entry(&1, inspect_opts))
+    IEx.History.each(&print_history_entry(&1, inspect_opts))
   end
 
   defp print_history_entry(config, inspect_opts) do
@@ -279,20 +284,12 @@ defmodule IEx.Helpers do
   end
 
   @doc """
-  Reloads all modules that have already been reloaded with `r/1` at any point
-  in the current IEx session.
-  """
-  def r do
-    List.flatten(Enum.map(iex_reloaded, do_r(&1)))
-  end
-
-  @doc """
   Recompiles and reloads the specified module's source file.
 
   Please note that all the modules defined in the same file as `module`
   are recompiled and reloaded.
   """
-  def r(module) do
+  def r(module) when is_atom(module) do
     case do_r(module) do
       mods when is_list(mods) -> { module, mods }
       other -> other
@@ -306,11 +303,9 @@ defmodule IEx.Helpers do
         :nosource
 
       String.ends_with?(source, ".erl") ->
-        Process.put(:iex_reloaded, :ordsets.add_element(module, iex_reloaded))
-        [ compile_erlang(source) |> elem(0) ]
+        [compile_erlang(source) |> elem(0)]
 
       true ->
-        Process.put(:iex_reloaded, :ordsets.add_element(module, iex_reloaded))
         Enum.map(Code.load_file(source), fn {name, _} -> name end)
     end
   end
@@ -319,7 +314,7 @@ defmodule IEx.Helpers do
   Load the given module's beam code (and ensures any previous
   old version was properly purged before).
   """
-  def l(module) do
+  def l(module) when is_atom(module) do
     :code.purge(module)
     :code.load_file(module)
   end
@@ -342,10 +337,6 @@ defmodule IEx.Helpers do
     end
   end
 
-  defp iex_reloaded do
-    Process.get(:iex_reloaded) || :ordsets.new
-  end
-
   defp source(module) do
     source = module.module_info(:compile)[:source]
 
@@ -365,7 +356,7 @@ defmodule IEx.Helpers do
   @doc """
   Changes the current working directory to the given path.
   """
-  def cd(directory) do
+  def cd(directory) when is_binary(directory) do
     case File.cd(expand_home(directory)) do
       :ok -> pwd
       { :error, :enoent } ->
@@ -377,7 +368,7 @@ defmodule IEx.Helpers do
   Produces a simple list of a directory's contents.
   If `path` points to a file, prints its full path.
   """
-  def ls(path // ".") do
+  def ls(path // ".") when is_binary(path) do
     path = expand_home(path)
     case File.ls(path) do
       { :ok, items } ->
@@ -404,7 +395,7 @@ defmodule IEx.Helpers do
 
   defp ls_print(path, list) do
     # print items in multiple columns (2 columns in the worst case)
-    lengths = Enum.map(list, String.length(&1))
+    lengths = Enum.map(list, &String.length(&1))
     maxlen = maxlength(lengths)
     width = min(maxlen, 30) + 5
     ls_print(path, list, width)
@@ -423,7 +414,7 @@ defmodule IEx.Helpers do
   end
 
   defp maxlength(list) do
-    Enum.reduce(list, 0, max(&1, &2))
+    Enum.reduce(list, 0, &max(&1, &2))
   end
 
   defp format_item(path, representation) do

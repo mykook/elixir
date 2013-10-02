@@ -15,7 +15,7 @@ warn(Warning) ->
   elixir_code_server:cast(register_warning),
   io:put_chars(standard_error, Warning).
 
-%% Handle inspecting for exceptions
+%% Handle inspecting for exceptions modules
 
 inspect(Atom) when is_atom(Atom) ->
   'Elixir.Inspect.Atom':inspect(Atom).
@@ -169,6 +169,10 @@ handle_file_error(File, {Line,erl_lint,{unsafe_var,Var,{In,_Where}}}) ->
   Message = io_lib:format("cannot define variable ~ts inside ~ts", [format_var(Var), Translated]),
   raise(Line, File, 'Elixir.CompileError', iolist_to_binary(Message));
 
+handle_file_error(File, {Line,erl_lint,{spec_fun_undefined,{M,F,A}}}) ->
+  Message = io_lib:format("spec for undefined function ~ts.~ts/~B", [inspect(M), F, A]),
+  raise(Line, File, 'Elixir.CompileError', iolist_to_binary(Message));
+
 handle_file_error(File, {Line,Module,Desc}) ->
   form_error(Line, File, Module, Desc).
 
@@ -178,18 +182,6 @@ assert_no_function_scope(_Meta, _Kind, #elixir_scope{function=nil}) -> [];
 assert_no_function_scope(Meta, Kind, S) ->
   syntax_error(Meta, S#elixir_scope.file, "cannot invoke ~ts inside a function", [Kind]).
 
-assert_no_match_or_guard_scope(Meta, Kind, S) ->
-  assert_no_match_scope(Meta, Kind, S),
-  assert_no_guard_scope(Meta, Kind, S).
-
-assert_no_match_scope(Meta, Kind, #elixir_scope{context=match} = S) ->
-  syntax_error(Meta, S#elixir_scope.file, "cannot invoke ~ts inside match clause", [Kind]);
-assert_no_match_scope(_Meta, _Kind, _S) -> [].
-
-assert_no_guard_scope(Meta, Kind, #elixir_scope{context=guard} = S) ->
-  syntax_error(Meta, S#elixir_scope.file, "cannot invoke ~ts inside guard", [Kind]);
-assert_no_guard_scope(_Meta, _Kind, _S) -> [].
-
 assert_module_scope(Meta, Kind, #elixir_scope{module=nil,file=File}) ->
   syntax_error(Meta, File, "cannot invoke ~ts outside module", [Kind]);
 assert_module_scope(_Meta, _Kind, #elixir_scope{module=Module}) -> Module.
@@ -197,6 +189,18 @@ assert_module_scope(_Meta, _Kind, #elixir_scope{module=Module}) -> Module.
 assert_function_scope(Meta, Kind, #elixir_scope{function=nil,file=File}) ->
   syntax_error(Meta, File, "cannot invoke ~ts outside function", [Kind]);
 assert_function_scope(_Meta, _Kind, #elixir_scope{function=Function}) -> Function.
+
+assert_no_match_or_guard_scope(Meta, Kind, S) ->
+  assert_no_match_scope(Meta, Kind, S),
+  assert_no_guard_scope(Meta, Kind, S).
+
+assert_no_match_scope(Meta, _Kind, #elixir_scope{context=match} = S) ->
+  compile_error(Meta, S#elixir_scope.file, "invalid pattern in match clause", []);
+assert_no_match_scope(_Meta, _Kind, _S) -> [].
+
+assert_no_guard_scope(Meta, _Kind, #elixir_scope{context=guard} = S) ->
+  compile_error(Meta, S#elixir_scope.file, "invalid pattern in guard", []);
+assert_no_guard_scope(_Meta, _Kind, _S) -> [].
 
 %% Helpers
 

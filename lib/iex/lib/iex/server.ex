@@ -4,14 +4,14 @@ defmodule IEx.Server do
   @doc """
   Eval loop for an IEx session. Its responsibilities include:
 
-    * loading of .iex files
-    * reading input
-    * trapping exceptions in the code being evaluated
-    * keeping expression history
+  * loading of .iex files
+  * reading input
+  * trapping exceptions in the code being evaluated
+  * keeping expression history
 
   """
   def start(config) do
-    init_systems()
+    IEx.History.init
 
     { _, _, scope } = :elixir.eval('require IEx.Helpers', [], 0, config.scope)
     config = config.scope(scope)
@@ -26,55 +26,57 @@ defmodule IEx.Server do
 
     old_flag = Process.flag(:trap_exit, true)
     self_pid = self
+
+    # We have one loop for receiving input and
+    # another loop for evaluating contents.
     pid = spawn_link(fn -> input_loop(self_pid) end)
 
     try do
-      do_loop(config.input_pid(pid))
+      eval_loop(config.input_pid(pid))
     after
       Process.exit(pid, :normal)
       Process.flag(:trap_exit, old_flag)
     end
   end
 
-  defp do_loop(config) do
+  ## Eval loop
+
+  defp eval_loop(config) do
     prefix = config.cache != []
-    config.input_pid <- { :do_input, prefix, config.counter }
+    config.input_pid <- { :do_input, self, prefix, config.counter }
     wait_input(config)
   end
 
   defp wait_input(config) do
+    pid = config.input_pid
+
     receive do
-      { :input, line } ->
-        unless line == :eof do
-          new_config =
-            try do
-              counter = config.counter
-              code    = config.cache
-              eval(code, line, counter, config)
-            catch
-              kind, error ->
-                print_error(kind, Exception.normalize(kind, error), System.stacktrace)
-                config.cache('')
-            end
+      { :input, ^pid, data } when is_binary(data) ->
+        new_config =
+          try do
+            line    = String.to_char_list!(data)
+            counter = config.counter
+            code    = config.cache
+            eval(code, line, counter, config)
+          catch
+            kind, error ->
+              print_error(kind, Exception.normalize(kind, error), System.stacktrace)
+              config.cache('')
+          end
 
-          do_loop(new_config)
-        end
-
+        eval_loop(new_config)
+      { :input, ^pid, :eof } ->
+        :ok
+      { :input, ^pid, { :error, :interrupted } } ->
+        io_error "** (EXIT) interrupted"
+        eval_loop(config.cache(''))
+      { :input, ^pid, { :error, :terminated } } ->
+        :ok
       { :EXIT, _pid, :normal } ->
         wait_input(config)
       { :EXIT, pid, reason } ->
         print_exit(pid, reason)
         wait_input(config)
-    end
-  end
-
-  defp init_systems() do
-    IEx.History.init
-
-    # Disable ANSI-escape-sequence-based coloring on Windows
-    # Can be overriden in .iex
-    if match?({ :win32, _ }, :os.type()) do
-      IEx.Options.set :colors, enabled: false
     end
   end
 
@@ -114,7 +116,7 @@ defmodule IEx.Server do
 
         config = config.cache(code).scope(nil).result(result)
         update_history(config)
-        config.update_counter(&1+1).cache('').binding(new_binding).scope(scope).result(nil)
+        config.update_counter(&(&1+1)).cache('').binding(new_binding).scope(scope).result(nil)
 
       { :error, { line_no, error, token } } ->
         if token == [] do
@@ -128,68 +130,8 @@ defmodule IEx.Server do
     end
   end
 
-  # Locates and loads an .iex file from one of predefined locations. Returns
-  # new config.
-  defp load_dot_iex(config, path // nil) do
-    candidates = if path do
-      [path]
-    else
-      Enum.map [".iex", "~/.iex"], Path.expand(&1)
-    end
-
-    path = Enum.find candidates, fn path -> File.regular?(path) end
-
-    if nil?(path) do
-      config
-    else
-      try do
-        code  = File.read!(path)
-        scope = :elixir.scope_for_eval(config.scope, file: path)
-
-        # Evaluate the contents in the same environment do_loop will run in
-        { _result, binding, scope } =
-          :elixir.eval(String.to_char_list!(code),
-                       config.binding,
-                       0,
-                       scope)
-
-        scope = :elixir.scope_for_eval(scope, file: "iex")
-        config.binding(binding).scope(scope)
-      catch
-        kind, error ->
-          print_error(kind, Exception.normalize(kind, error), System.stacktrace)
-          System.halt(1)
-      end
-    end
-  end
-
   defp update_history(config) do
     IEx.History.append(config, config.counter)
-  end
-
-  defp input_loop(iex_pid) do
-    receive do
-      { :do_input, prefix, counter } ->
-        iex_pid <- { :input, io_get(prefix, counter) }
-    end
-    input_loop(iex_pid)
-  end
-
-  defp io_get(prefix, counter) do
-    prefix = if prefix, do: "..."
-
-    prompt =
-      if is_alive do
-        "#{prefix || remote_prefix}(#{node})#{counter}> "
-      else
-        "#{prefix || "iex"}(#{counter})> "
-      end
-
-    case IO.gets(:stdio, prompt) do
-      :eof -> :eof
-      { :error, _ } -> ''
-      data -> String.to_char_list!(data)
-    end
   end
 
   defp io_put(result) do
@@ -208,9 +150,75 @@ defmodule IEx.Server do
     end
   end
 
+  ## Load dot iex helpers
+
+  # Locates and loads an .iex file from one of predefined locations. Returns
+  # new config.
+  defp load_dot_iex(config, path // nil) do
+    candidates = if path do
+      [path]
+    else
+      Enum.map [".iex", "~/.iex"], &Path.expand/1
+    end
+
+    path = Enum.find candidates, &File.regular?/1
+
+    if nil?(path) do
+      config
+    else
+      eval_dot_iex(config, path)
+    end
+  end
+
+  defp eval_dot_iex(config, path) do
+    try do
+      code  = File.read!(path)
+      scope = :elixir.scope_for_eval(config.scope, file: path)
+
+      # Evaluate the contents in the same environment eval_loop will run in
+      { _result, binding, scope } =
+        :elixir.eval(String.to_char_list!(code),
+                     config.binding,
+                     0,
+                     scope)
+
+      scope = :elixir.scope_for_eval(scope, file: "iex")
+      config.binding(binding).scope(scope)
+    catch
+      kind, error ->
+        print_error(kind, Exception.normalize(kind, error), System.stacktrace)
+        System.halt(1)
+    end
+  end
+
+  ## Input loop
+
+  defp input_loop(pid) do
+    receive do
+      { :do_input, ^pid, prefix, counter } ->
+        pid <- { :input, self, io_get(prefix, counter) }
+    end
+    input_loop(pid)
+  end
+
+  defp io_get(prefix, counter) do
+    prefix = if prefix, do: "..."
+
+    prompt =
+      if is_alive do
+        "#{prefix || remote_prefix}(#{node})#{counter}> "
+      else
+        "#{prefix || "iex"}(#{counter})> "
+      end
+
+    IO.gets(:stdio, prompt)
+  end
+
   defp remote_prefix do
     if node == node(:erlang.group_leader), do: "iex", else: "rem"
   end
+
+  ## Error handling
 
   defp print_error(:error, exception, stacktrace) do
     print_stacktrace stacktrace, fn ->

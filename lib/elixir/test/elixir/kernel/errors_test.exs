@@ -45,12 +45,6 @@ defmodule Kernel.ErrorsTest do
       '"""\nbar'
   end
 
-  test :invalid_partial do
-    assert_compile_fail SyntaxError,
-      "nofile:1: partial variable &2 cannot be defined without &1",
-      '&2 + 3'
-  end
-
   test :unexpected_end do
     assert_compile_fail SyntaxError,
       "nofile:1: unexpected token: end",
@@ -117,6 +111,16 @@ defmodule Kernel.ErrorsTest do
         def hello(arg // 1), do: nil
       end
       '''
+  end
+
+  test :invalid_match_pattern do
+    assert_compile_fail CompileError,
+    "nofile:2: invalid pattern in match clause",
+    '''
+    case true do
+      true && true -> true
+    end
+    '''
   end
 
   test :different_defs_with_defaults do
@@ -569,6 +573,24 @@ defmodule Kernel.ErrorsTest do
     assert_compile_fail CompileError,
       "nofile:1: cannot invoke remote function Hello.something_that_does_not_exist/0 inside guard",
       'case [] do; [] when Hello.something_that_does_not_exist == [] -> :ok; end'
+  end
+
+  test :typespec_errors do
+    assert_compile_fail CompileError,
+      "nofile:2: type foo() undefined",
+      '''
+      defmodule Example do
+        @type omg :: foo
+      end
+      '''
+
+    assert_compile_fail CompileError,
+      "nofile:2: spec for undefined function Example.omg/0",
+      '''
+      defmodule Example do
+        @spec omg :: atom
+      end
+      '''
   end
 
   test :macros_error_stacktrace do

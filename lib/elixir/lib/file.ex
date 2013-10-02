@@ -47,13 +47,6 @@ defexception File.CopyError, [reason: nil, action: "", source: nil, destination:
   end
 end
 
-defexception File.IteratorError, reason: nil do
-  def message(exception) do
-    formatted = iolist_to_binary(:file.format_error(reason exception))
-    "error during file iteration: #{formatted}"
-  end
-end
-
 defmodule File do
   @moduledoc """
   This module contains functions to manipulate files.
@@ -945,7 +938,7 @@ defmodule File do
   """
   def ls(path // ".") do
     case F.list_dir(path) do
-      { :ok, file_list } -> { :ok, Enum.map(file_list, to_string(&1)) }
+      { :ok, file_list } -> { :ok, Enum.map(file_list, &to_string(&1)) }
       { :error, _ } = error -> error
     end
   end

@@ -13,11 +13,11 @@ defmodule ListTest do
   end
 
   test :partial_application do
-    assert ([&1, 2]).(1) == [1, 2]
-    assert ([&1, &2]).(1, 2) == [1, 2]
-    assert ([&2, &1]).(2, 1) == [1, 2]
-    assert ([&1|&2]).(1, 2) == [1|2]
-    assert ([&1, &2|&3]).(1, 2, 3) == [1, 2|3]
+    assert (&[&1, 2]).(1) == [1, 2]
+    assert (&[&1, &2]).(1, 2) == [1, 2]
+    assert (&[&2, &1]).(2, 1) == [1, 2]
+    assert (&[&1|&2]).(1, 2) == [1|2]
+    assert (&[&1, &2|&3]).(1, 2, 3) == [1, 2|3]
   end
 
   test :wrap do
@@ -132,5 +132,20 @@ defmodule ListTest do
     assert List.replace_at([1, 2, 3], 3, 0) == [1, 2, 3]
     assert List.replace_at([1, 2, 3], -1, 0) == [1, 2, 0]
     assert List.replace_at([1, 2, 3], -4, 0) == [1, 2, 3]
+  end
+
+  test :heredoc do
+    assert [ "a\n" ] == [ """ ]
+      a
+      """
+
+    assert [ "a\n", "b\n", "c\n", 1 ] == [ """, """, """, 1 ]
+      a
+      """
+      b
+      """
+      c
+      """
+
   end
 end

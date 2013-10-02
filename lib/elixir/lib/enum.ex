@@ -473,7 +473,7 @@ defmodule Enum do
 
   ## Examples
 
-      iex> Enum.filter_map([1, 2, 3], fn(x) -> rem(x, 2) == 0 end, &1 * 2)
+      iex> Enum.filter_map([1, 2, 3], fn(x) -> rem(x, 2) == 0 end, &(&1 * 2))
       [4]
 
   """
@@ -648,13 +648,8 @@ defmodule Enum do
 
   """
   @spec join(t) :: String.t
-  @spec join(t, String.t | char_list) :: String.t | char_list
+  @spec join(t, String.t) :: String.t
   def join(collection, joiner // "")
-
-  def join(collection, joiner) when is_list(joiner) do
-    IO.write "Enum.join/2 with a char list is deprecated, please use do an explicit conversion instead\n#{Exception.format_stacktrace}"
-    :unicode.characters_to_list join(collection, :unicode.characters_to_binary(joiner))
-  end
 
   def join(collection, joiner) when is_binary(joiner) do
     Enumerable.reduce(collection, "", fn
@@ -708,13 +703,8 @@ defmodule Enum do
 
   """
   @spec map_join(t, (element -> any)) :: String.t
-  @spec map_join(t, String.t | char_list, (element -> any)) :: String.t | char_list
+  @spec map_join(t, String.t, (element -> any)) :: String.t
   def map_join(collection, joiner // "", mapper)
-
-  def map_join(collection, joiner, mapper) when is_list(joiner) do
-    IO.write "Enum.map_join/3 with a char list is deprecated, please use do an explicit conversion instead\n#{Exception.format_stacktrace}"
-    :unicode.characters_to_list map_join(collection, :unicode.characters_to_binary(joiner), mapper)
-  end
 
   def map_join(collection, joiner, mapper) when is_binary(joiner) do
     Enumerable.reduce(collection, "", fn
@@ -902,8 +892,8 @@ defmodule Enum do
   end
 
   def sort(collection) do
-    fun = &1 <= &2
-    Enumerable.reduce(collection, [], sort_reducer(&1, &2, fun)) |>
+    fun = &(&1 <= &2)
+    Enumerable.reduce(collection, [], &sort_reducer(&1, &2, fun)) |>
       sort_terminator(fun)
   end
 
@@ -922,7 +912,7 @@ defmodule Enum do
   end
 
   def sort(collection, fun) do
-    Enumerable.reduce(collection, [], sort_reducer(&1, &2, fun)) |>
+    Enumerable.reduce(collection, [], &sort_reducer(&1, &2, fun)) |>
       sort_terminator(fun)
   end
 
@@ -1039,6 +1029,31 @@ defmodule Enum do
   def take(collection, count) when count < 0 do
     { list, count } = iterate_and_count(collection, count)
     take(list, count)
+  end
+
+  @doc """
+  Returns a collection of every `nth` items in the collection,
+  starting with the first.
+
+  ## Examples
+
+      iex> Enum.take_every(1..10, 2)
+      [1, 3, 5, 7, 9]
+
+  """
+  @spec take_every(t, integer) :: list
+  def take_every(_collection, 0), do: []
+  def take_every(collection, nth) do
+    res = Enumerable.reduce(collection, nil, fn
+      x, { acc, ^nth } -> { [x | acc], 1 }
+      _, { acc, count } -> { acc, count + 1 }
+      x, nil -> { [x], 1 }
+    end)
+
+    case res do
+      nil -> []
+      { list, _ } -> :lists.reverse(list)
+    end
   end
 
   @doc """
@@ -1169,12 +1184,6 @@ defmodule Enum do
     reduce(collection, &Kernel.max(&1, &2))
   end
 
-  @doc false
-  def max(coll, fun) do
-    IO.write "Enum.max/2 is deprecated, please use Enum.max_by/2 instead\n#{Exception.format_stacktrace}"
-    max_by(coll, fun)
-  end
-
   @doc """
   Returns the maximum value as calculated by the given function.
   Raises `EmptyError` if the collection is empty.
@@ -1227,12 +1236,6 @@ defmodule Enum do
   @spec min(t) :: element | no_return
   def min(collection) do
     reduce(collection, &Kernel.min(&1, &2))
-  end
-
-  @doc false
-  def min(coll, fun) do
-    IO.write "Enum.min/2 is deprecated, please use Enum.min_by/2 instead\n#{Exception.format_stacktrace}"
-    min_by(coll, fun)
   end
 
   @doc """

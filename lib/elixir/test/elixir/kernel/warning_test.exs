@@ -402,8 +402,35 @@ defmodule Kernel.WarningTest do
     purge [Sample]
   end
 
+  test :typedoc_on_typep do
+    assert capture_err(fn ->
+      Code.eval_string """
+      defmodule Sample do
+        @typedoc "Something"
+        @typep priv :: any
+        @spec foo() :: priv
+        def foo(), do: nil
+      end
+      """
+    end) =~ "nofile:3: type priv/0 is private, @typedoc's are always discarded for private types"
+  after
+    purge [Sample]
+  end
+
+  test :typedoc_with_no_type do
+    assert capture_err(fn ->
+      Code.eval_string """
+      defmodule Sample do
+        @typedoc "Something"
+      end
+      """
+    end) =~ "nofile:1: @typedoc provided but no type follows it"
+  after
+    purge [Sample]
+  end
+
   defp purge(list) when is_list(list) do
-    Enum.each list, purge(&1)
+    Enum.each list, &purge/1
   end
 
   defp purge(module) when is_atom(module) do

@@ -77,9 +77,6 @@ defmodule Record do
   example, is only available inside the `User` module and nowhere else.
   You can find more information in `Kernel.defrecordp/2` docs.
 
-  In general, though, records are used as part of a module's public
-  interface. For such use cases, Elixir provides record modules.
-
   ## defrecord
 
   By using `defrecord`, a developer can make a Record definition
@@ -97,7 +94,7 @@ defmodule Record do
       user()        #=> User[name: "José", age: 25]
       user(age: 26) #=> User[name: "José", age: 26]
 
-  Notice that now, since the record definition is accessible, Elixir
+  Notice that now since the record definition is accessible, Elixir
   shows the record nicely formatted, no longer as a simple tuple. We
   can get the raw formatting by passing `raw: true` to `inspect`:
 
@@ -112,9 +109,9 @@ defmodule Record do
       User[]        #=> User[name: "José", age: 25]
       User[age: 26] #=> User[name: "José", age: 26]
 
-  The macro name is replaced by the module name and the parenthesis
-  are replaced by brackets. When the shortcut syntax is used, there
-  is no need to import the record.
+  The macro name is replaced by the module name and the parentheses
+  are replaced by brackets. When this syntax is used, there is no
+  need to import the record.
 
   Before we sum up the differences between `defrecord` and
   `defrecordp`, there is one last functionality introduced by
@@ -141,6 +138,12 @@ defmodule Record do
   All the calls above happen at runtime. It gives Elixir
   records flexibility at the cost of performance since
   there is more work happening at runtime.
+
+  The above calls (new and update) can interchangeably accept both
+  atom and string keys for field names, however not both at the same time.
+  Please also note that atom keys are faster. This feature allows to
+  "sanitize" untrusted dictionaries and initialize/update records without
+  using `binary_to_existing_atom/1`.
 
   To sum up, `defrecordp` should be used when you don't want
   to expose the record information while `defrecord` should be used
@@ -175,7 +178,7 @@ defmodule Record do
       to_string WeekDate[year: 2013, week: 26, week_day: 4]
       "2013-W26-4"
 
-  A protocol can be implemented for any record defined via `defrecord`.
+  A protocol can be implemented for any record.
   """
 
   @type t :: tuple
@@ -627,9 +630,8 @@ defmodule Record do
     # an ordered dict of options (opts) and it will try to fetch
     # the given key from the ordered dict, falling back to the
     # default value if one does not exist.
-    selective = lc { k, v } inlist values do
-      quote do: Keyword.get(opts, unquote(k), unquote(v))
-    end
+    atom_selective   = lc { k, v } inlist values, do: initialize_lookup(k, v)
+    string_selective = lc { k, v } inlist values, do: initialize_lookup(atom_to_binary(k), v)
 
     quote do
       @doc false
@@ -637,7 +639,17 @@ defmodule Record do
 
       @doc false
       def new([]), do: { __MODULE__, unquote_splicing(defaults) }
-      def new(opts) when is_list(opts), do: { __MODULE__, unquote_splicing(selective) }
+      def new([{key, _}|_] = opts) when is_atom(key), do: { __MODULE__, unquote_splicing(atom_selective) }
+      def new([{key, _}|_] = opts) when is_binary(key), do: { __MODULE__, unquote_splicing(string_selective) }
+    end
+  end
+
+  defp initialize_lookup(k, v) do
+    quote do
+      case :lists.keyfind(unquote(k), 1, opts) do
+        false -> unquote(v)
+        {_, v} -> v
+      end
     end
   end
 
@@ -728,15 +740,14 @@ defmodule Record do
   # Define an updater method that receives a
   # keyword list and updates the record.
   defp updater(values) do
-    fields =
-      lc {key, _default} inlist values do
-        index = find_index(values, key, 1)
-        quote do
-          Keyword.get(keywords, unquote(key), elem(record, unquote(index)))
-        end
-      end
+    atom_fields =
+      lc {key, _default} inlist values, do: updater_lookup(key, key, values)
 
-    contents = quote do: { __MODULE__, unquote_splicing(fields) }
+    string_fields =
+      lc {key, _default} inlist values, do: updater_lookup(atom_to_binary(key), key, values)
+
+    atom_contents = quote do: { __MODULE__, unquote_splicing(atom_fields) }
+    string_contents = quote do: { __MODULE__, unquote_splicing(string_fields) }
 
     quote do
       @doc false
@@ -744,8 +755,22 @@ defmodule Record do
         record
       end
 
-      def update(keywords, record) do
-        unquote(contents)
+      def update([{key, _}|_] = keywords, record) when is_atom(key) do
+        unquote(atom_contents)
+      end
+      def update([{key, _}|_] = keywords, record) when is_binary(key) do
+        unquote(string_contents)
+      end
+    end
+  end
+
+  defp updater_lookup(k, key, values) do
+    v = find_index(values, key, 1)
+
+    quote do
+      case :lists.keyfind(unquote(k), 1, keywords) do
+        false -> elem(record, unquote(v))
+        {_, value} -> value
       end
     end
   end
@@ -768,6 +793,7 @@ defmodule Record do
   defp core_specs(values) do
     types   = lc { _, _, spec } inlist values, do: spec
     options = if values == [], do: [], else: [options_specs(values)]
+    values_specs = if values == [], do: [], else: values_specs(values)
 
     quote do
       unless Kernel.Typespec.defines_type?(__MODULE__, :t, 0) do
@@ -775,7 +801,7 @@ defmodule Record do
       end
 
       unless Kernel.Typespec.defines_type?(__MODULE__, :options, 0) do
-        @type options :: unquote(options)
+        @type options :: unquote(options) | [{String.t, unquote(values_specs)}]
       end
 
       @spec new :: t
@@ -792,6 +818,11 @@ defmodule Record do
     :lists.foldl fn { k, _, v }, acc ->
       { :|, [], [{ k, v }, acc] }
     end, { k, v }, t
+  end
+  defp values_specs([{ _, _, v }|t]) do
+    :lists.foldl fn { _, _, v }, acc ->
+      { :|, [], [v, acc] }
+    end, v, t
   end
 
   defp accessor_specs([{ :__exception__, _, _ }|t], 1, acc) do
@@ -814,7 +845,7 @@ defmodule Record do
 
   ## Helpers
 
-  defp is_keyword(list) when is_list(list), do: :lists.all(is_keyword_tuple(&1), list)
+  defp is_keyword(list) when is_list(list), do: :lists.all(&is_keyword_tuple/1, list)
   defp is_keyword(_), do: false
 
   defp is_keyword_tuple({ x, _ }) when is_atom(x), do: true

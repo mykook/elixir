@@ -23,7 +23,6 @@ eval_quoted(Module, Quoted, RawBinding, Opts) ->
 
 scope_for_eval(Module, #elixir_scope{} = S) ->
   S#elixir_scope{module=Module};
-
 scope_for_eval(Module, Opts) ->
   scope_for_eval(Module, elixir:scope_for_eval(Opts)).
 
@@ -69,8 +68,9 @@ compile(Line, Module, Block, Vars, #elixir_scope{context_modules=FileModules} = 
     { Base, Export, Private, Def, Defmacro, Functions } = elixir_def:unwrap_stored_definitions(FileList, Module),
 
     { All, Forms0 } = functions_form(Line, File, Module, Base, Export, Def, Defmacro, Functions, C),
-    Forms1          = specs_form(Line, Module, Private, Defmacro, Forms0, C),
+    Forms1          = specs_form(Module, Private, Defmacro, Forms0, C),
     Forms2          = attributes_form(Line, File, Module, Forms1),
+    Forms3          = typedocs_form(Module, Forms2),
 
     case ets:lookup(data_table(Module), 'on_load') of
       [] -> ok;
@@ -82,11 +82,12 @@ compile(Line, Module, Block, Vars, #elixir_scope{context_modules=FileModules} = 
     elixir_tracker:ensure_no_function_conflict(Line, File, Module, AllFunctions),
     elixir_tracker:ensure_all_imports_used(Line, File, Module),
     elixir_tracker:warn_unused_local(File, Module, Private),
-    warn_unused_docs(Line, File, Module, All),
+    warn_invalid_docs(Line, File, Module, All),
+    warn_unused_docs(Line, File, Module),
 
     Final = [
       { attribute, Line, file, { FileList, Line } },
-      { attribute, Line, module, Module } | Forms2
+      { attribute, Line, module, Module } | Forms3
     ],
 
     Binary = load_form(Line, Final, S),
@@ -198,9 +199,21 @@ attributes_form(Line, _File, Module, Current) ->
 
   ets:foldl(Transform, Current, Table).
 
+%% Add typedocs to the form
+typedocs_form(Module, Current) ->
+  Table = docs_table(Module),
+  Transform = fun({ Tuple, Line, Kind, _Sig, Doc }, Acc) ->
+    case Kind of
+      type      -> [{ attribute, Line, typedoc, { Tuple, Doc } } | Acc];
+      opaque    -> [{ attribute, Line, typedoc, { Tuple, Doc } } | Acc];
+      _         -> Acc
+    end
+  end,
+  ets:foldl(Transform, Current, Table).
+
 %% Specs
 
-specs_form(Line, Module, Private, Defmacro, Forms, C) ->
+specs_form(Module, Private, Defmacro, Forms, C) ->
   Defmacrop = [Tuple || { Tuple, defmacrop, _, _, _ } <- Private],
   case elixir_compiler:get_opt(internal, C) of
     true -> Forms;
@@ -212,16 +225,17 @@ specs_form(Line, Module, Private, Defmacro, Forms, C) ->
       'Elixir.Module':delete_attribute(Module, spec),
       'Elixir.Module':delete_attribute(Module, callback),
 
-      Temp = specs_attributes(Line, spec, Forms, Specs),
-      specs_attributes(Line, callback, Temp, Callbacks)
+      Temp = specs_attributes(spec, Forms, Specs),
+      specs_attributes(callback, Temp, Callbacks)
   end.
 
-specs_attributes(Line, Type, Forms, Specs) ->
+specs_attributes(Type, Forms, Specs) ->
   Keys = lists:foldl(fun({ Tuple, Value }, Acc) ->
-                       lists:keystore(Tuple, 1, Acc, { Tuple, Value } )
+                       lists:keystore(Tuple, 1, Acc, { Tuple, Value })
                      end, [], Specs),
   lists:foldl(fun({ Tuple, _ }, Acc) ->
     Values = [V || { K, V } <- Specs, K == Tuple],
+    { type, Line, _, _ } = hd(Values),
     [{ attribute, Line, Type, { Tuple, Values } }|Acc]
   end, Forms, Keys).
 
@@ -282,17 +296,30 @@ check_module_availability(Line, File, Module, Compiler) ->
       []
   end.
 
-warn_unused_docs(_Line, _File, 'Elixir.Kernel', _All) -> ok;
-warn_unused_docs(_Line, _File, 'Elixir.Kernel.SpecialForms', _All) -> ok;
-warn_unused_docs(_Line, File, Module, All) ->
+warn_invalid_docs(_Line, _File, 'Elixir.Kernel', _All) -> ok;
+warn_invalid_docs(_Line, _File, 'Elixir.Kernel.SpecialForms', _All) -> ok;
+warn_invalid_docs(_Line, File, Module, All) ->
   ets:foldl(fun
-    ({ Tuple, Line, _, _, _ }, Acc) ->
+    ({ _, _, Kind, _, _ }, _) when Kind == type; Kind == opaque ->
+      ok;
+    ({ Tuple, Line, _, _, _ }, _) ->
       case lists:member(Tuple, All) of
-        true  -> Acc;
         false ->
-          elixir_errors:handle_file_warning(File, { Line, ?MODULE, { invalid_doc, Tuple } })
+          elixir_errors:handle_file_warning(File, { Line, ?MODULE, { invalid_doc, Tuple } });
+        true ->
+          ok
       end
   end, ok, docs_table(Module)).
+
+warn_unused_docs(Line, File, Module) ->
+  lists:foreach(fun(Attribute) ->
+    case ets:member(data_table(Module), Attribute) of
+      true ->
+        elixir_errors:handle_file_warning(File, { Line, ?MODULE, { unused_doc, Attribute } });
+      _ ->
+        ok
+    end
+  end, [typedoc]).
 
 % EXTRA FUNCTIONS
 
@@ -329,7 +356,10 @@ module_clause(Module) ->
   { clause, 0, [{ atom, 0, module }], [], [{ atom, 0, Module }] }.
 
 docs_clause(Module, true) ->
-  Docs = ordsets:from_list(ets:tab2list(docs_table(Module))),
+  Docs = ordsets:from_list(
+    [{Tuple, Line, Kind, Sig, Doc} ||
+     {Tuple, Line, Kind, Sig, Doc} <- ets:tab2list(docs_table(Module)),
+     Kind =/= type, Kind =/= opaque]),
   { clause, 0, [{ atom, 0, docs }], [], [elixir_utils:elixir_to_erl(Docs)] };
 
 docs_clause(_Module, _) ->
@@ -388,6 +418,12 @@ munge_stacktrace(Info, []) ->
 
 format_error({ invalid_doc, { Name, Arity } }) ->
   io_lib:format("docs provided for nonexistent function or macro ~ts/~B", [Name, Arity]);
+
+format_error({ unused_doc, typedoc }) ->
+  "@typedoc provided but no type follows it";
+
+format_error({ unused_doc, doc }) ->
+  "@doc provided but no definition follows it";
 
 format_error({ internal_function_overridden, { Name, Arity } }) ->
   io_lib:format("function ~ts/~B is internal and should not be overridden", [Name, Arity]);

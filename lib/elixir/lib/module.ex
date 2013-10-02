@@ -477,10 +477,11 @@ defmodule Module do
   end
 
   @doc """
-  Attaches documentation to a given function. It expects
-  the module the function belongs to, the line (a non negative
+  Attaches documentation to a given function or type. It expects
+  the module the function/type belongs to, the line (a non negative
   integer), the kind (def or defmacro), a tuple representing
-  the function and its arity and the documentation, which should
+  the function and its arity, the function signature (the signature
+  should be omitted for types) and the documentation, which should
   be either a binary or a boolean.
 
   ## Examples
@@ -491,12 +492,14 @@ defmodule Module do
       end
 
   """
-  def add_doc(_module, _line, kind, _tuple, _signature, doc) when kind in [:defp, :defmacrop] do
+  def add_doc(module, line, kind, tuple, signature // [], doc)
+
+  def add_doc(_module, _line, kind, _tuple, _signature, doc) when kind in [:defp, :defmacrop, :typep] do
     if doc, do: { :error, :private_doc }, else: :ok
   end
 
   def add_doc(module, line, kind, tuple, signature, doc) when
-      kind in [:def, :defmacro] and (is_binary(doc) or is_boolean(doc) or doc == nil) do
+      kind in [:def, :defmacro, :type, :opaque] and (is_binary(doc) or is_boolean(doc) or doc == nil) do
     assert_not_compiled!(:add_doc, module)
     table = docs_table_for(module)
 

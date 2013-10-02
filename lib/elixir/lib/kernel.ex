@@ -1,5 +1,3 @@
-import Kernel, except: [raise: 1, raise: 2]
-
 defmodule Kernel do
   @moduledoc """
   `Kernel` provides the default macros and functions
@@ -479,20 +477,6 @@ defmodule Kernel do
     :erlang.binary_to_existing_atom(binary, encoding)
   end
 
-  @doc false
-  def binary_to_list(binary) do
-    IO.write "binary_to_list/1 is deprecated. Please use String.to_char_list!/1 instead "
-    IO.write "unless you are working with bytes, then you should use :binary.bin_to_list/1\n#{Exception.format_stacktrace}"
-    :erlang.binary_to_list(binary)
-  end
-
-  @doc false
-  def binary_to_list(binary, start, stop) do
-    IO.write "binary_to_list/3 is deprecated. Please use String.to_char_list!/1 instead "
-    IO.write "unless you are working with bytes, then you should use :binary.bin_to_list/3\n#{Exception.format_stacktrace}"
-    :erlang.binary_to_list(binary, start, stop)
-  end
-
   @doc """
   Returns an Erlang term which is the result of decoding the binary
   object `binary`, which must be encoded according to the Erlang external
@@ -871,13 +855,6 @@ defmodule Kernel do
   @spec list_to_atom(list) :: atom
   def list_to_atom(list) do
     :erlang.list_to_atom(list)
-  end
-
-  @doc false
-  def list_to_binary(list) do
-    IO.write "list_to_binary/1 is deprecated. Please use String.from_char_list!/1 instead "
-    IO.write "unless you are working with bytes, then you should use iolist_to_binary/1\n#{Exception.format_stacktrace}"
-    :erlang.list_to_binary(list)
   end
 
   @doc """
@@ -2015,8 +1992,7 @@ defmodule Kernel do
 
     case is_atom(expanded) do
       false ->
-        raise ArgumentError,
-          message: "invalid arguments for use, expected an atom or alias as argument"
+        :erlang.error ArgumentError.exception(message: "invalid arguments for use, expected an atom or alias as argument")
       true ->
         quote do
           require unquote(expanded)
@@ -2026,7 +2002,14 @@ defmodule Kernel do
   end
 
   @doc %S"""
-  Inspect the given arguments according to the `Inspect` protocol.
+  Inspect the given argument according to the `Inspect` protocol.
+  The second argument is a keywords list with options to control
+  inspection.
+
+  The second argument may also be an instance of the `Inspect.Opts`
+  record and, in such cases, instead of returning a string, it
+  returns an algebra document which can be converted to a string
+  via `Inspect.Algebra`.
 
   ## Options
 
@@ -2061,7 +2044,7 @@ defmodule Kernel do
   representation of an Elixir term. In such cases, the inspected result
   must start with `#`. For example, inspecting a function will return:
 
-      inspect &1 + &2
+      inspect &(&1 + &2)
       #=> #Function<...>
 
   """
@@ -2101,12 +2084,6 @@ defmodule Kernel do
 
   defmacro to_string(arg) do
     quote do: String.Chars.to_string(unquote(arg))
-  end
-
-  @doc false
-  def to_binary(chars) do
-    IO.write "to_binary/1 is deprecated, please use to_string/1 instead\n#{Exception.format_stacktrace}"
-    String.Chars.to_string(chars)
   end
 
   @doc """
@@ -2184,12 +2161,12 @@ defmodule Kernel do
   Match can also be used to filter or find a value in an enumerable:
 
       list = [{:a, 1}, {:b, 2}, {:a, 3}]
-      Enum.filter list, match?({:a, _}, &1)
+      Enum.filter list, &match?({:a, _}, &1)
 
   Guard clauses can also be given to the match:
 
       list = [{:a, 1}, {:b, 2}, {:a, 3}]
-      Enum.filter list, match?({:a, x } when x < 2, &1)
+      Enum.filter list, &match?({:a, x } when x < 2, &1)
 
   However, variables assigned in the match will not be available
   outside of the function call:
@@ -2208,7 +2185,7 @@ defmodule Kernel do
   end
 
   defmacro match?(left, right) do
-    { left, _ } = falsify_var(left, [], falsify_all(&1, &2))
+    { left, _ } = falsify_var(left, [], &falsify_all/2)
 
     quote do
       case unquote(right) do
@@ -2237,7 +2214,7 @@ defmodule Kernel do
 
   defp falsify_var({ :when, meta, [left, right] }, acc, fun) do
     { left, acc }  = falsify_var(left, acc, fun)
-    { right, acc } = falsify_var(right, acc, falsify_selected(&1, &2))
+    { right, acc } = falsify_var(right, acc, &falsify_selected/2)
     { { :when, meta, [left, right] }, acc }
   end
 
@@ -2258,7 +2235,7 @@ defmodule Kernel do
   end
 
   defp falsify_var(list, acc, fun) when is_list(list) do
-    :lists.mapfoldl(falsify_var(&1, &2, fun), acc, list)
+    :lists.mapfoldl(&falsify_var(&1, &2, fun), acc, list)
   end
 
   defp falsify_var(other, acc, _fun) do
@@ -2652,8 +2629,8 @@ defmodule Kernel do
     new_acc =
       case condition do
         { :_, _, atom } when is_atom(atom) ->
-          raise ArgumentError, message: <<"unbound variable _ inside cond. ",
-            "If you want the last clause to match, you probably meant to use true ->">>
+          :erlang.error ArgumentError.exception(message: <<"unbound variable _ inside cond. ",
+            "If you want the last clause to match, you probably meant to use true ->">>)
         x when is_atom(x) and not x in [false, nil] ->
           clause
         _ ->
@@ -3055,12 +3032,12 @@ defmodule Kernel do
 
   ## Examples
 
-      iex> [1, [2], 3] |> List.flatten |> Enum.map(&1 * 2)
+      iex> [1, [2], 3] |> List.flatten |> Enum.map(&(&1 * 2))
       [2,4,6]
 
   The expression above is simply translated to:
 
-      Enum.map(List.flatten([1, [2], 3]), &1 * 2)
+      Enum.map(List.flatten([1, [2], 3]), &(&1 * 2))
 
   Be aware of operator precendence when using this operator.
   For example, the following expression:
@@ -3095,7 +3072,7 @@ defmodule Kernel do
   end
 
   defp pipeline_op(_, arg) do
-    raise ArgumentError, message: "unsupported expression in pipeline |> operator: #{Macro.to_string arg}"
+    :erlang.error ArgumentError.exception(message: "unsupported expression in pipeline |> operator: #{Macro.to_string arg}")
   end
 
   @doc """
@@ -3120,12 +3097,10 @@ defmodule Kernel do
 
   """
   @spec raise(binary | atom | tuple) :: no_return
-  def raise(msg) when is_binary(msg) do
-    :erlang.error RuntimeError[message: msg]
-  end
-
-  def raise(exception) do
-    raise(exception, [])
+  defmacro raise(msg) when is_binary(msg) do
+    quote do
+      :erlang.error RuntimeError[message: unquote(msg)]
+    end
   end
 
   @doc """
@@ -3146,8 +3121,16 @@ defmodule Kernel do
 
   """
   @spec raise(tuple | atom, list) :: no_return
-  def raise(exception, args) do
-    :erlang.error exception.exception(args)
+  defmacro raise(exception, args // []) do
+    quote do
+      exception = unquote(exception)
+      case exception do
+        e when is_binary(e) ->
+          :erlang.error RuntimeError.new(message: exception)
+        _ ->
+          :erlang.error exception.exception(unquote(args))
+      end
+    end
   end
 
   @doc """
@@ -3288,15 +3271,15 @@ defmodule Kernel do
                 { :error, _ } ->
                   :elixir_aliases.ensure_loaded(caller.line, caller.file, atom, caller.context_modules)
                 _ ->
-                  raise ArgumentError, message: "cannot use module #{inspect atom} in access protocol because it does not export __record__/1"
+                  :erlang.error ArgumentError.exception(message: "cannot use module #{inspect atom} in access protocol because it does not export __record__/1")
               end
           end
 
         Record.access(atom, fields, args, caller)
       false ->
         case caller.in_match? do
-          true  -> raise ArgumentError, message: << "the access protocol cannot be used inside match clauses ",
-                     "(for example, on the left hand side of a match or in function signatures)" >>
+          true  -> :erlang.error ArgumentError.exception(message: << "the access protocol cannot be used inside match clauses ",
+                     "(for example, on the left hand side of a match or in function signatures)" >>)
           false -> quote do: Access.access(unquote(element), unquote(args))
         end
     end
@@ -3347,14 +3330,14 @@ defmodule Kernel do
     funs = Macro.escape(funs, unquote: true)
     quote bind_quoted: [funs: funs, opts: opts] do
       target = Keyword.get(opts, :to) ||
-        raise(ArgumentError, message: "Expected to: to be given as argument")
+        :erlang.error ArgumentError.exception(message: "Expected to: to be given as argument")
 
       append_first = Keyword.get(opts, :append_first, false)
 
       lc fun inlist List.wrap(funs) do
         case Macro.extract_args(fun) do
           { name, args } -> :ok
-          :error -> raise ArgumentError, message: "invalid syntax in defdelegate #{Macro.to_string(fun)}"
+          :error -> :erlang.error ArgumentError.exception(message: "invalid syntax in defdelegate #{Macro.to_string(fun)}")
         end
 
         actual_args =
@@ -3388,12 +3371,6 @@ defmodule Kernel do
     string
   end
 
-  @doc false
-  defmacro sigil_B(string, []) do
-    IO.write "%B() is deprecated, please use %S() instead\n#{Exception.format_stacktrace}"
-    string
-  end
-
   @doc """
   Handles the sigil %s. It returns a string as if it was double quoted
   string, unescaping characters and replacing interpolations.
@@ -3407,12 +3384,6 @@ defmodule Kernel do
 
   """
   defmacro sigil_s({ :<<>>, line, pieces }, []) do
-    { :<<>>, line, Macro.unescape_tokens(pieces) }
-  end
-
-  @doc false
-  defmacro sigil_b({ :<<>>, line, pieces }, []) do
-    IO.write "%b() is deprecated, please use %s() instead\n#{Exception.format_stacktrace}"
     { :<<>>, line, Macro.unescape_tokens(pieces) }
   end
 
@@ -3466,13 +3437,13 @@ defmodule Kernel do
 
   """
   defmacro sigil_r({ :<<>>, _line, [string] }, options) when is_binary(string) do
-    binary = Macro.unescape_string(string, Regex.unescape_map(&1))
+    binary = Macro.unescape_string(string, fn(x) -> Regex.unescape_map(x) end)
     regex  = Regex.compile!(binary, :binary.list_to_bin(options))
     Macro.escape(regex)
   end
 
   defmacro sigil_r({ :<<>>, line, pieces }, options) do
-    binary = { :<<>>, line, Macro.unescape_tokens(pieces, Regex.unescape_map(&1)) }
+    binary = { :<<>>, line, Macro.unescape_tokens(pieces, fn(x) -> Regex.unescape_map(x) end) }
     quote do: Regex.compile!(unquote(binary), unquote(:binary.list_to_bin(options)))
   end
 
@@ -3612,11 +3583,8 @@ defmodule Kernel do
   defp split_words(string, modifiers) do
     mod = case modifiers do
       [] -> ?s
-      [mod] when mod in [?b] ->
-        IO.write "%w()b is deprecated, please use %w()s instead\n#{Exception.format_stacktrace}"
-        ?s
       [mod] when mod in [?s, ?a, ?c] -> mod
-      _else -> raise ArgumentError, message: "modifier must be one of: s, a, c"
+      _else -> :erlang.error ArgumentError.exception(message: "modifier must be one of: s, a, c")
     end
 
     case is_binary(string) do

@@ -29,7 +29,7 @@ defmodule Mix.Deps do
       { app :: atom, requirement :: String.t, opts :: Keyword.t }
 
   The application name must be an atom, the version requirement must
-  be a string according to the specification outline in `Mix.Version`
+  be a string according to the specification outline in `Version`
   and opts is a keyword lists that may include options for the underlying
   SCM or options used by Mix. Each set of options is documented below.
 
@@ -105,22 +105,25 @@ defmodule Mix.Deps do
   defdelegate children(), to: Mix.Deps.Retriever
 
   @doc """
-  Return all dependencies depending on the given dependencies.
+  Return all given dependencies and their depending dependencies.
   """
-  def depending(deps, all_deps // all)
+  def with_depending(deps, all_deps // all) do
+    deps ++ do_with_depending(deps, all_deps)
+      |> Enum.uniq(&(&1.app))
+  end
 
-  def depending([], _all_deps) do
+  defp do_with_depending([], _all_deps) do
     []
   end
 
-  def depending(deps, all_deps) do
+  defp do_with_depending(deps, all_deps) do
     dep_names = Enum.map(deps, fn dep -> dep.app end)
 
     parents = Enum.filter all_deps, fn dep ->
       Enum.any?(dep.deps, fn child_dep -> child_dep.app in dep_names end)
     end
 
-    parents ++ depending(parents, all_deps)
+    do_with_depending(parents, all_deps) ++ parents
   end
 
   @doc """
@@ -321,10 +324,10 @@ defmodule Mix.Deps do
     end)
 
     [ opts[:dest] | sub_dirs ]
-      |> Enum.map(Path.wildcard(&1))
+      |> Enum.map(&Path.wildcard(&1))
       |> Enum.concat
-      |> Enum.map(Path.join(&1, "ebin"))
-      |> Enum.filter(File.dir?(&1))
+      |> Enum.map(&Path.join(&1, "ebin"))
+      |> Enum.filter(&File.dir?(&1))
   end
 
   def load_paths(Mix.Dep[manager: manager, opts: opts]) when manager in [:make, nil] do

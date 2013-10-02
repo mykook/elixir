@@ -5,6 +5,7 @@ defmodule Macro do
   This module provides conveniences for working with macros.
   """
 
+  @typedoc "Abstract Syntax Tree (AST) node"
   @type t :: { t, t } | { t, Keyword.t, t } | atom | number | binary | list
 
   @doc false
@@ -95,18 +96,6 @@ defmodule Macro do
     :elixir_quote.escape(expr, Keyword.get(opts, :unquote, false)) |> elem(0)
   end
 
-  @doc false
-  def unescape_binary(chars) do
-    IO.write "Macro.unescape_binary/1 is deprecated, please use Macro.unescape_string/1 instead\n#{Exception.format_stacktrace}"
-    unescape_string(chars)
-  end
-
-  @doc false
-  def unescape_binary(chars, map) do
-    IO.write "Macro.unescape_binary/2 is deprecated, please use Macro.unescape_string/2 instead\n#{Exception.format_stacktrace}"
-    unescape_string(chars, map)
-  end
-
   @doc %S"""
   Unescape the given chars. This is the unescaping behavior
   used by default in Elixir single- and double-quoted strings.
@@ -174,7 +163,7 @@ defmodule Macro do
 
   Using the unescape_map defined above is easy:
 
-      Macro.unescape_string "example\\n", unescape_map(&1)
+      Macro.unescape_string "example\\n", &unescape_map(&1)
 
   """
   @spec unescape_string(String.t, (non_neg_integer -> non_neg_integer | false)) :: String.t
@@ -336,7 +325,7 @@ defmodule Macro do
   defmacrop kw_keywords, do: [:do, :catch, :rescue, :after, :else]
 
   defp is_kw_blocks?([_|_] = kw) do
-    Enum.all?(kw, match?({x, _} when x in kw_keywords, &1))
+    Enum.all?(kw, &match?({x, _} when x in kw_keywords, &1))
   end
   defp is_kw_blocks?(_), do: false
 
@@ -529,7 +518,7 @@ defmodule Macro do
       aliases ->
         aliases = lc alias inlist aliases, do: (expand_once(alias, env, cache) |> elem(0))
 
-        case :lists.all(is_atom(&1), aliases) do
+        case :lists.all(&is_atom/1, aliases) do
           true ->
             receiver = :elixir_aliases.concat(aliases)
             :elixir_tracker.record_alias(receiver, env.module)
@@ -611,7 +600,7 @@ defmodule Macro do
   defp to_erl_env(_env, cache), do: cache
 
   defp is_partial?(args) do
-    :lists.any(match?({ :&, _, [_] }, &1), args)
+    :lists.any(&match?({ :&, _, [_] }, &1), args)
   end
 
   @doc """
@@ -686,7 +675,7 @@ defmodule Macro do
   end
 
   defp expand_all_until({ list, cache }, env) when is_list(list) do
-    :lists.mapfoldl(expand_all(&1, env, &2), cache, list)
+    :lists.mapfoldl(&expand_all(&1, env, &2), cache, list)
   end
 
   defp expand_all_until({ other, cache }, _env) do
@@ -712,7 +701,7 @@ defmodule Macro do
   end
 
   defp do_safe_term({ left, right }), do: do_safe_term(left) || do_safe_term(right)
-  defp do_safe_term(terms) when is_list(terms),  do: Enum.find_value(terms, do_safe_term(&1))
+  defp do_safe_term(terms) when is_list(terms),  do: Enum.find_value(terms, &do_safe_term(&1))
   defp do_safe_term(terms) when is_tuple(terms), do: { :unsafe, terms }
   defp do_safe_term(_), do: nil
 end

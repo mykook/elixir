@@ -28,11 +28,11 @@ defmodule Mix.DepsTest do
 
     in_fixture "deps_status", fn ->
       deps = Mix.Deps.all
-      assert Enum.find deps, match?(Mix.Dep[app: :ok, status: { :ok, _ }], &1)
-      assert Enum.find deps, match?(Mix.Dep[app: :invalidvsn, status: { :invalidvsn, :ok }], &1)
-      assert Enum.find deps, match?(Mix.Dep[app: :invalidapp, status: { :invalidapp, _ }], &1)
-      assert Enum.find deps, match?(Mix.Dep[app: :noappfile, status: { :noappfile, _ }], &1)
-      assert Enum.find deps, match?(Mix.Dep[app: :uncloned, status: { :unavailable, _ }], &1)
+      assert Enum.find deps, &match?(Mix.Dep[app: :ok, status: { :ok, _ }], &1)
+      assert Enum.find deps, &match?(Mix.Dep[app: :invalidvsn, status: { :invalidvsn, :ok }], &1)
+      assert Enum.find deps, &match?(Mix.Dep[app: :invalidapp, status: { :invalidapp, _ }], &1)
+      assert Enum.find deps, &match?(Mix.Dep[app: :noappfile, status: { :noappfile, _ }], &1)
+      assert Enum.find deps, &match?(Mix.Dep[app: :uncloned, status: { :unavailable, _ }], &1)
     end
   after
     Mix.Project.pop
@@ -43,7 +43,30 @@ defmodule Mix.DepsTest do
 
     in_fixture "deps_status", fn ->
       deps = Mix.Deps.all
-      assert Enum.find deps, match?(Mix.Dep[app: :ok, status: { :ok, _ }], &1)
+      assert Enum.find deps, &match?(Mix.Dep[app: :ok, status: { :ok, _ }], &1)
+    end
+  after
+    Mix.Project.pop
+  end
+
+  defmodule ConvergedDepsApp do
+    def project do
+      [
+        app: :raw_sample,
+        version: "0.1.0",
+        deps: [
+          { :deps_repo, "0.1.0", path: "custom/deps_repo" },
+          { :git_repo, "0.1.0", git: MixTest.Case.fixture_path("git_repo") }
+        ]
+      ]
+    end
+  end
+
+  test "correctly order overriden deps" do
+    Mix.Project.push ConvergedDepsApp
+
+    in_fixture "deps_status", fn ->
+      assert [:git_repo, :deps_repo] == Enum.map(Mix.Deps.all, &(&1.app))
     end
   after
     Mix.Project.pop

@@ -1,7 +1,17 @@
+defexception IO.StreamError, reason: nil do
+  def message(exception) do
+    formatted = iolist_to_binary(:file.format_error(reason exception))
+    "error during streaming: #{formatted}"
+  end
+end
+
 defmodule IO do
   @moduledoc """
   Module responsible for doing IO. Many functions in this
   module expects an IO device and an io data encoded in UTF-8.
+  Use the bin* functions if the data is binary, useful when
+  working with raw bytes or when no unicode conversion should
+  be performed.
 
   An IO device must be a pid or an atom representing a process.
   For convenience, Elixir provides `:stdio` and `:stderr` as
@@ -17,9 +27,6 @@ defmodule IO do
     with many bytes (Elixir's default representation);
 
   * A list of binaries or a list of char lists (as described above);
-
-  * If none of the above, `to_string` is invoked on the
-    given argument;
 
   """
 
@@ -160,7 +167,7 @@ defmodule IO do
   Gets a number of bytes from the io device. If the
   io device is a unicode device, `count` implies
   the number of unicode codepoints to be retrieved.
-  Otherwise, `count` is the number of raw bytes to be retrieved. 
+  Otherwise, `count` is the number of raw bytes to be retrieved.
   It returns:
 
   * `data` - The input characters.
@@ -220,17 +227,11 @@ defmodule IO do
   Here is an example on how we mimic an echo server
   from the command line:
 
-      Enum.each IO.stream(:stdio, :line), IO.write(&1)
+      Enum.each IO.stream(:stdio, :line), &IO.write(&1)
 
   """
   def stream(device, line_or_bytes) do
-    stream(map_dev(device), line_or_bytes, &1, &2)
-  end
-
-  @doc false
-  def stream(device) do
-    IO.write "IO.stream(device) is deprecated, please use IO.stream(device, :line) instead\n#{Exception.format_stacktrace}"
-    stream(device, :line)
+    fn(acc, f) -> stream(map_dev(device), line_or_bytes, acc, f) end
   end
 
   @doc """
@@ -240,13 +241,7 @@ defmodule IO do
   This reads the io as a raw binary.
   """
   def binstream(device, line_or_bytes) do
-    binstream(map_dev(device), line_or_bytes, &1, &2)
-  end
-
-  @doc false
-  def binstream(device) do
-    IO.write "IO.binstream(device) is deprecated, please use IO.binstream(device, :line) instead\n#{Exception.format_stacktrace}"
-    binstream(device, :line)
+    fn(acc, f) -> binstream(map_dev(device), line_or_bytes, acc, f) end
   end
 
   @doc false
@@ -255,7 +250,7 @@ defmodule IO do
       :eof ->
         acc
       { :error, reason } ->
-        raise File.IteratorError, reason: reason
+        raise IO.StreamError, reason: reason
       data ->
         stream(device, what, fun.(data, acc), fun)
     end
@@ -267,7 +262,7 @@ defmodule IO do
       :eof ->
         acc
       { :error, reason } ->
-        raise File.IteratorError, reason: reason
+        raise IO.StreamError, reason: reason
       data ->
         binstream(device, what, fun.(data, acc), fun)
     end

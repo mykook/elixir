@@ -356,22 +356,16 @@ defmodule Keyword do
     :lists.keymember(key, 1, keywords)
   end
 
-  @doc false
-  def update(dict, key, fun) when is_function(fun, 1) do
-    IO.write "Keyword.update/3 is deprecated, please use Keyword.update!/3 instead\n#{Exception.format_stacktrace}"
-    update!(dict, key, fun)
-  end
-
   @doc """
   Updates the `key` with the given function. If the `key` does
   not exist, raises `KeyError`.
 
   ## Examples
 
-      iex> Keyword.update!([a: 1], :a, &1 * 2)
+      iex> Keyword.update!([a: 1], :a, &(&1 * 2))
       [a: 2]
 
-      iex> Keyword.update!([a: 1], :b, &1 * 2)
+      iex> Keyword.update!([a: 1], :b, &(&1 * 2))
       ** (KeyError) key not found: :b
 
   """
@@ -394,10 +388,10 @@ defmodule Keyword do
 
   ## Examples
 
-      iex> Keyword.update([a: 1], :a, 13, &1 * 2)
+      iex> Keyword.update([a: 1], :a, 13, &(&1 * 2))
       [a: 2]
 
-      iex> Keyword.update([a: 1], :b, 11, &1 * 2)
+      iex> Keyword.update([a: 1], :b, 11, &(&1 * 2))
       [a: 1, b: 11]
 
   """

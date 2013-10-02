@@ -107,12 +107,6 @@ defmodule HashDict do
     dict
   end
 
-  @doc false
-  def update(dict, key, fun) when is_function(fun, 1) do
-    IO.write "HashDict.update/3 is deprecated, please use HashDict.update!/3 instead\n#{Exception.format_stacktrace}"
-    update!(dict, key, fun)
-  end
-
   def update!(dict, key, fun) when is_function(fun, 1) do
     case dict_put(dict, key, { :update, nil, fun }) do
       { dict, 0 } ->
@@ -159,13 +153,13 @@ defmodule HashDict do
 
   def merge(dict1, dict2, callback) when is_record(dict1, HashDict) and is_record(dict2, HashDict) and elem(dict1, 1) < elem(dict2, 1) do
     dict_fold dict1, dict2, fn [k|v1], acc ->
-      update(acc, k, v1, callback.(k, v1, &1))
+      update(acc, k, v1, &callback.(k, v1, &1))
     end
   end
 
   def merge(dict1, dict2, callback) when is_record(dict1, HashDict) and is_record(dict2, HashDict) do
     dict_fold dict2, dict1, fn [k|v2], acc ->
-      update(acc, k, v2, callback.(k, &1, v2))
+      update(acc, k, v2, &callback.(k, &1, v2))
     end
   end
 

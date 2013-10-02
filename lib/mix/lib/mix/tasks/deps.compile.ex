@@ -29,18 +29,19 @@ defmodule Mix.Tasks.Deps.Compile do
   """
 
   import Mix.Deps, only: [ all: 0, available?: 1, by_name: 2, compile_paths: 1,
-                           depending: 2, format_dep: 1, make?: 1, mix?: 1, rebar?: 1 ]
+                           with_depending: 2, format_dep: 1, make?: 1, mix?: 1,
+                           rebar?: 1 ]
 
   def run(args) do
     Mix.Project.get! # Require the project to be available
 
     case OptionParser.parse(args, switches: [quiet: :boolean]) do
       { opts, [], _ } ->
-        do_run(Enum.filter(all, available?(&1)), opts)
+        do_run(Enum.filter(all, &available?/1), opts)
       { opts, tail, _ } ->
         all_deps = all
-        deps = by_name(tail, all_deps)
-        do_run(deps ++ depending(deps, all_deps), opts)
+        deps = by_name(tail, all_deps) |> with_depending(all_deps)
+        do_run(deps, opts)
     end
   end
 
@@ -52,7 +53,9 @@ defmodule Mix.Tasks.Deps.Compile do
         Mix.Dep[app: app, status: status, opts: opts] = dep
 
         check_unavailable!(app, status)
-        unless run_opts[:quiet], do: shell.info "* Compiling #{app}"
+        unless run_opts[:quiet] || opts[:compile] == false do
+          shell.info "* Compiling #{app}"
+        end
 
         deps_path = opts[:dest]
         root_path = Path.expand(Mix.project[:deps_path])
@@ -62,21 +65,26 @@ defmodule Mix.Tasks.Deps.Compile do
           root_lockfile: Path.expand(Mix.project[:lockfile])
         ]
 
-        ebins = Enum.map compile_paths(dep), &String.to_char_list!(&1)
+        ebins = Enum.map compile_paths(dep), &String.to_char_list!/1
 
         # Avoid compilation conflicts
         Enum.each ebins, fn ebin -> :code.del_path(ebin |> Path.expand) end
 
         compiled = cond do
-          opts[:compile] -> File.cd! deps_path, fn -> do_compile app, opts[:compile] end
-          mix?(dep)      -> File.cd! deps_path, fn -> do_mix dep, config end
-          rebar?(dep)    -> File.cd! deps_path, fn -> do_rebar app, root_path end
-          make?(dep)     -> File.cd! deps_path, fn -> do_command app, "make" end
-          true           -> shell.error "Could not compile #{app}, no mix.exs, rebar.config or Makefile " <>
-                              "(pass :compile as an option to customize compilation, set it to :noop to do nothing)"
+          not nil?(opts[:compile]) ->
+            File.cd! deps_path, fn -> do_compile app, opts[:compile] end
+          mix?(dep) ->
+            File.cd! deps_path, fn -> do_mix dep, config end
+          rebar?(dep) ->
+            File.cd! deps_path, fn -> do_rebar app, root_path end
+          make?(dep) ->
+            File.cd! deps_path, fn -> do_command app, "make" end
+          true ->
+            shell.error "Could not compile #{app}, no mix.exs, rebar.config or Makefile " <>
+              "(pass :compile as an option to customize compilation, set it to false to do nothing)"
         end
 
-        Enum.each ebins, Code.prepend_path &1
+        Enum.each ebins, &Code.prepend_path/1
         compiled
       end
 

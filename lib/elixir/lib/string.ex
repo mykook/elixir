@@ -155,7 +155,7 @@ defmodule String do
   @spec split(t) :: [t]
   defdelegate split(binary), to: String.Unicode
 
-  @doc """
+  @doc %S"""
   Divides a string into substrings based on a pattern,
   returning a list of these substrings. The pattern can
   be a string, a list of strings or a regular expression.
@@ -168,6 +168,8 @@ defmodule String do
 
   ## Examples
 
+  Splitting with a string pattern:
+
       iex> String.split("a,b,c", ",")
       ["a", "b", "c"]
       iex> String.split("a,b,c", ",", global: false)
@@ -175,15 +177,30 @@ defmodule String do
       iex> String.split(" a b c ", " ", trim: true)
       ["a", "b", "c"]
 
+  A list of patterns:
+
       iex> String.split("1,2 3,4", [" ", ","])
       ["1", "2", "3", "4"]
+
+  A regular expression:
 
       iex> String.split("a,b,c", %r{,})
       ["a", "b", "c"]
       iex> String.split("a,b,c", %r{,}, global: false)
       ["a", "b,c"]
-      iex> String.split("a,b", %r{\\.})
-      ["a,b"]
+      iex> String.split(" a b c ", %r{\s}, trim: true)
+      ["a", "b", "c"]
+
+  Splitting on empty patterns returns codepoints:
+
+      iex> String.split("abc", %r{})
+      ["a", "b", "c", ""]
+      iex> String.split("abc", "")
+      ["a", "b", "c", ""]
+      iex> String.split("abc", "", trim: true)
+      ["a", "b", "c"]
+      iex> String.split("abc", "", global: false)
+      ["a", "bc"]
 
   """
   @spec split(t, t | [t] | Regex.t) :: [t]
@@ -191,6 +208,8 @@ defmodule String do
   def split(binary, pattern, options // [])
 
   def split("", _pattern, _options), do: [""]
+
+  def split(binary, "", options), do: split(binary, %r""u, options)
 
   def split(binary, pattern, options) when is_regex(pattern) do
     Regex.split(pattern, binary, options)
@@ -642,27 +661,14 @@ defmodule String do
   def valid_character?(<<_ :: utf8>> = codepoint), do: valid?(codepoint)
   def valid_character?(_), do: false
 
-  @doc %S"""
-  Checks whether `str` is a valid codepoint.
+  @doc false
+  def valid_codepoint?(binary) do
+    IO.write "String.valid_codepoint?/1 is deprecated, please use match against << _ :: utf8 >> instead\n#{Exception.format_stacktrace}"
+    do_valid_codepoint?(binary)
+  end
 
-  Note that the empty string is considered invalid, as are
-  strings containing multiple codepoints.
-
-  ## Examples
-
-      iex> String.valid_codepoint?("a")
-      true
-      iex> String.valid_codepoint?("ø")
-      true
-      iex> String.valid_codepoint?(<<0xffff :: 16>>)
-      false
-      iex> String.valid_codepoint?("asdf")
-      false
-
-  """
-  @spec valid_codepoint?(codepoint) :: boolean
-  def valid_codepoint?(<<_ :: utf8>>), do: true
-  def valid_codepoint?(_), do: false
+  defp do_valid_codepoint?(<<_ :: utf8>>), do: true
+  defp do_valid_codepoint?(_), do: false
 
   @doc """
   Returns unicode graphemes in the string.
@@ -947,7 +953,7 @@ defmodule String do
   @spec starts_with?(t, t | [t]) :: boolean
 
   def starts_with?(string, prefixes) when is_list(prefixes) do
-    Enum.any?(prefixes, do_starts_with(string, &1))
+    Enum.any?(prefixes, &do_starts_with(string, &1))
   end
 
   def starts_with?(string, prefix) do
@@ -983,7 +989,7 @@ defmodule String do
   @spec ends_with?(t, t | [t]) :: boolean
 
   def ends_with?(string, suffixes) when is_list(suffixes) do
-    Enum.any?(suffixes, do_ends_with(string, &1))
+    Enum.any?(suffixes, &do_ends_with(string, &1))
   end
 
   def ends_with?(string, suffix) do
@@ -1022,7 +1028,7 @@ defmodule String do
   @spec contains?(t, t | [t]) :: boolean
 
   def contains?(string, matches) when is_list(matches) do
-    Enum.any?(matches, do_contains(string, &1))
+    Enum.any?(matches, &do_contains(string, &1))
   end
 
   def contains?(string, match) do

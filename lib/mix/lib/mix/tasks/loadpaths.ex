@@ -31,7 +31,7 @@ defmodule Mix.Tasks.Loadpaths do
       config = Mix.project
 
       if requirement = config[:elixir] do
-        unless Mix.Version.match?(System.version, requirement) do
+        unless Version.match?(System.version, requirement) do
           raise Mix.ElixirVersionError, target: config[:app] || Mix.Project.get,
                                         expected: requirement,
                                         actual: System.version
@@ -43,6 +43,6 @@ defmodule Mix.Tasks.Loadpaths do
     old_vsn = Mix.Deps.Lock.elixir_vsn
     if old_vsn && old_vsn != System.version, do: Mix.Deps.Lock.touch
 
-    Enum.each Mix.Project.load_paths, Code.prepend_path(&1)
+    Enum.each Mix.Project.load_paths, &Code.prepend_path(&1)
   end
 end
