@@ -17,21 +17,21 @@ defprotocol Range.Iterator do
 end
 
 defimpl Enumerable, for: Range do
-  def reduce(Range[first: first] = range, acc, fun) do
+  def reduce(first .. _ = range, acc, fun) do
     Range.Iterator.reduce(first, range, acc, fun)
   end
 
-  def member?(Range[first: first, last: last], value) do
-    value in first..last
+  def member?(first .. last, value) do
+    first <= value and value <= last
   end
 
-  def count(Range[first: first] = range) do
+  def count(first .. _ = range) do
     Range.Iterator.count(first, range)
   end
 end
 
-defimpl Range.Iterator, for: Number do
-  def reduce(first, Range[last: last], acc, fun) when is_integer(first) and is_integer(last) do
+defimpl Range.Iterator, for: Integer do
+  def reduce(first, Range[last: last], acc, fun) when is_integer(last) do
     reducer = if last >= first do
       fn(acc, fun) -> do_reducer_up(first, last, acc, fun) end
     else
@@ -56,11 +56,11 @@ defimpl Range.Iterator, for: Number do
     do_reducer_down(counter - 1, last, fun.(counter, acc), fun)
   end
 
-  def count(first, Range[last: last]) when is_integer(first) and is_integer(last) and last >= first do
+  def count(first, Range[last: last]) when is_integer(last) and last >= first do
     last - first + 1
   end
 
-  def count(first, Range[last: last]) when is_integer(first) and is_integer(last) do
+  def count(first, Range[last: last]) when is_integer(last) do
     first - last + 1
   end
 end

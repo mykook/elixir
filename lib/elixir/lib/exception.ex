@@ -39,6 +39,12 @@ defexception CaseClauseError, [actual: nil] do
   end
 end
 
+defexception TryClauseError, [actual: nil] do
+  def message(exception) do
+    "no try clause matching: #{inspect(exception.actual)}"
+  end
+end
+
 defexception BadArityError, [function: nil, args: nil] do
   def message(exception) do
     "bad arity error: #{inspect(exception.function)} called with #{inspect(exception.args)}"
@@ -144,6 +150,10 @@ defmodule Exception do
 
   def normalize({ :case_clause, actual }) do
     CaseClauseError[actual: actual]
+  end
+
+  def normalize({ :try_clause, actual }) do
+    TryClauseError[actual: actual]
   end
 
   def normalize(:undef) do
@@ -266,6 +276,8 @@ defmodule Exception do
       "Foo.bar/1"
       iex> Exception.format_mfa Foo, :bar, []
       "Foo.bar()"
+      iex> Exception.format_mfa nil, :bar, []
+      "nil.bar()"
 
   """
   def format_mfa(module, fun, arity) do
@@ -277,11 +289,13 @@ defmodule Exception do
 
     if is_list(arity) do
       inspected = lc x inlist arity, do: inspect(x)
-      "#{inspect module}.#{fun}(#{Enum.join(inspected, ", ")})"
+      "#{format_module module}#{fun}(#{Enum.join(inspected, ", ")})"
     else
-      "#{inspect module}.#{fun}/#{arity}"
+      "#{format_module module}#{fun}/#{arity}"
     end
   end
+
+  defp format_module(mod), do: "#{inspect mod}."
 
   @doc """
   Formats the given file and line as shown in stacktraces.

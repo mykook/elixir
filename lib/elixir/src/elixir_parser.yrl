@@ -20,7 +20,7 @@ Nonterminals
   call_args_no_parens_kw_expr call_args_no_parens_kw_comma call_args_no_parens_kw
   dot_op dot_alias dot_identifier dot_op_identifier dot_do_identifier
   dot_paren_identifier dot_bracket_identifier
-  var list bracket_access bit_string tuple
+  var list bit_string tuple
   do_block fn_eol do_eol end_eol block_eol block_item block_list
   .
 
@@ -28,7 +28,7 @@ Terminals
   identifier kw_identifier bracket_identifier
   paren_identifier do_identifier block_identifier
   fn 'end' aliases
-  number signed_number atom bin_string list_string sigil
+  number signed_number atom atom_string bin_string list_string sigil
   dot_call_op op_identifier
   comp_op at_op unary_op and_op or_op arrow_op match_op
   range_op in_op inc_op when_op than_op default_op tail_op
@@ -179,20 +179,20 @@ max_expr -> parens_call call_args_parens call_args_parens : build_nested_parens(
 max_expr -> dot_alias : '$1'.
 max_expr -> base_expr : '$1'.
 
-bracket_expr -> dot_bracket_identifier bracket_access : build_access(build_identifier('$1', nil), '$2').
-bracket_expr -> max_expr bracket_access : build_access('$1', '$2').
+bracket_expr -> dot_bracket_identifier list : build_access(build_identifier('$1', nil), '$2').
+bracket_expr -> max_expr list : build_access('$1', '$2').
 
-bracket_at_expr -> at_op_eol dot_bracket_identifier bracket_access :
+bracket_at_expr -> at_op_eol dot_bracket_identifier list :
                      build_access(build_unary_op('$1', build_identifier('$2', nil)), '$3').
-bracket_at_expr -> at_op_eol max_expr bracket_access :
+bracket_at_expr -> at_op_eol max_expr list :
                      build_access(build_unary_op('$1', '$2'), '$3').
-bracket_at_expr -> bracket_at_expr bracket_access :
+bracket_at_expr -> bracket_at_expr list :
                      build_access('$1', '$2').
 
+base_expr -> atom : ?exprs('$1').
 base_expr -> number : ?exprs('$1').
 base_expr -> signed_number : { element(4, '$1'), [{line,?line('$1')}], ?exprs('$1') }.
-base_expr -> atom : build_atom('$1').
-base_expr -> list : '$1'.
+base_expr -> list : element(1, '$1').
 base_expr -> tuple : '$1'.
 base_expr -> 'true' : ?id('$1').
 base_expr -> 'false' : ?id('$1').
@@ -200,6 +200,7 @@ base_expr -> 'nil' : ?id('$1').
 base_expr -> aliases : { '__aliases__', [{line,?line('$1')}], ?exprs('$1') }.
 base_expr -> bin_string  : build_bin_string('$1').
 base_expr -> list_string : build_list_string('$1').
+base_expr -> atom_string : build_atom_string('$1').
 base_expr -> bit_string : '$1'.
 base_expr -> sigil : build_sigil('$1').
 base_expr -> '&' number : { '&', [{line,?line('$1')}], [?exprs('$2')] }.
@@ -434,21 +435,17 @@ kw -> kw_expr : ['$1'].
 kw -> kw_comma : lists:reverse('$1').
 kw -> kw_comma kw_expr : lists:reverse(['$2'|'$1']).
 
-call_args_no_parens_kw_expr -> kw_eol call_args_no_parens_expr : {?exprs('$1'),'$2'}.
+call_args_no_parens_kw_expr -> kw_eol call_args_no_parens_expr : { ?exprs('$1'),'$2' }.
 call_args_no_parens_kw_comma -> call_args_no_parens_kw_expr : ['$1'].
 call_args_no_parens_kw_comma -> call_args_no_parens_kw_expr ',' call_args_no_parens_kw_comma : ['$1'|'$3'].
 call_args_no_parens_kw -> call_args_no_parens_kw_comma : '$1'.
 
 % Lists
 
-bracket_access -> open_bracket ']' : { [], ?line('$1') }.
-bracket_access -> open_bracket container_arg close_bracket : { '$2', ?line('$1') }.
-bracket_access -> open_bracket kw close_bracket : { '$2', ?line('$1') }.
-
-list -> open_bracket ']' : [].
-list -> open_bracket kw close_bracket : '$2'.
-list -> open_bracket container_arg close_bracket : ['$2'].
-list -> open_bracket container_expr ',' container_args close_bracket : ['$2'|'$4'].
+list -> open_bracket ']' : { [], ?line('$1') }.
+list -> open_bracket kw close_bracket : { '$2', ?line('$1') }.
+list -> open_bracket container_arg close_bracket : { ['$2'], ?line('$1') }.
+list -> open_bracket container_expr ',' container_args close_bracket : { ['$2'|'$4'], ?line('$1') }.
 
 % Tuple
 
@@ -548,32 +545,56 @@ extract_identifier(Other) -> Other.
 %% Fn
 
 build_fn(Op, Stab) ->
-  { fn, [{line,?line(Op)}], [[{ do, Stab }]] }.
+  { fn, [{line,?line(Op)}], [Stab] }.
 
 %% Access
 
-build_access(Expr, Access) ->
-  Meta = [{line,?line(Access)}],
-  { { '.', Meta, ['Elixir.Kernel', access] }, Meta, [ Expr, ?id(Access) ] }.
+build_access(Expr, { List, Line }) ->
+  Meta = [{line,Line}],
+  { { '.', Meta, ['Elixir.Kernel', access] }, Meta, [Expr, List] }.
 
 %% Interpolation aware
 
 build_sigil({ sigil, Line, Sigil, Parts, Modifiers }) ->
   Meta = [{line,Line}],
-  { list_to_atom("sigil_" ++ [Sigil]), Meta, [ { '<<>>', Meta, Parts }, Modifiers ] }.
+  { list_to_atom("sigil_" ++ [Sigil]), Meta, [ { '<<>>', Meta, string_parts(Parts) }, Modifiers ] }.
 
-build_bin_string({ bin_string, _Line, [H] }) when is_binary(H) -> H;
-build_bin_string({ bin_string, Line, Args }) -> { '<<>>', [{line,Line}], Args }.
+build_bin_string({ bin_string, _Line, [H] }) when is_binary(H) ->
+  H;
+build_bin_string({ bin_string, Line, Args }) ->
+  { '<<>>', [{line,Line}], string_parts(Args) }.
 
-build_list_string({ list_string, _Line, [H] }) when is_binary(H) -> elixir_utils:characters_to_list(H);
+build_list_string({ list_string, _Line, [H] }) when is_binary(H) ->
+  elixir_utils:characters_to_list(H);
 build_list_string({ list_string, Line, Args }) ->
   Meta = [{line,Line}],
-  { { '.', Meta, ['Elixir.String', 'to_char_list!'] }, Meta, [{ '<<>>', Meta, Args}] }.
+  { { '.', Meta, ['Elixir.String', 'to_char_list!'] }, Meta, [{ '<<>>', Meta, string_parts(Args) }] }.
 
-build_atom({ atom, _Line, Atom }) when is_atom(Atom) -> Atom;
-build_atom({ atom, Line, Args }) ->
+build_atom_string({ atom_string, _Line, Safe, [H] }) when is_binary(H) ->
+  Op = binary_to_atom_op(Safe), erlang:Op(H, utf8);
+build_atom_string({ atom_string, Line, Safe, Args }) ->
   Meta = [{line,Line}],
-  { { '.', Meta, [erlang, binary_to_atom] }, Meta, [{ '<<>>', Meta, Args }, utf8] }.
+  { { '.', Meta, [erlang, binary_to_atom_op(Safe)] }, Meta, [{ '<<>>', Meta, string_parts(Args) }, utf8] }.
+
+binary_to_atom_op(true)  -> binary_to_existing_atom;
+binary_to_atom_op(false) -> binary_to_atom.
+
+string_parts(Parts) ->
+  [string_part(Part) || Part <- Parts].
+string_part(Binary) when is_binary(Binary) ->
+  Binary;
+string_part({ Line, Tokens }) ->
+  Form = string_tokens_parse(Line, Tokens),
+  Meta = [{line,Line}],
+  { '::', Meta, [{ { '.', Meta, ['Elixir.Kernel', to_string] }, Meta, [Form]}, { binary, Meta, nil }]}.
+
+string_tokens_parse(Line, Tokens) ->
+  case parse(Tokens) of
+    { ok, [] } -> nil;
+    { ok, [Forms] } when not is_list(Forms) -> Forms;
+    { ok, Forms } -> { '__block__', [{line, Line}], Forms };
+    { error, _ } = Error -> throw(Error)
+  end.
 
 %% Keywords
 

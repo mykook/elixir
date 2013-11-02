@@ -11,24 +11,25 @@ defmodule IEx.Helpers do
 
   There are many other helpers available:
 
-  * `c/2`     — compiles a file at the given path
-  * `cd/1`    — changes the current directory
-  * `clear/0` — clears the screen
-  * `flush/0` — flushes all messages sent to the shell
-  * `h/0`     — prints this help message
-  * `h/1`     — prints help for the given module, function or macro
-  * `l/1`     — loads the given module's beam code and purges the current version
-  * `ls/0`    — lists the contents of the current directory
-  * `ls/1`    — lists the contents of the specified directory
-  * `m/0`     — prints loaded modules
-  * `pwd/0`   — prints the current working directory
-  * `r/1`     — recompiles and reloads the given module's source file
-  * `s/1`     — prints spec information
-  * `t/1`     — prints type information
-  * `v/0`     — prints the history of commands evaluated in the session
-  * `v/1`     — retrieves the nth value from the history
+  * `c/2`       — compiles a file at the given path
+  * `cd/1`      — changes the current directory
+  * `clear/0`   — clears the screen
+  * `flush/0`   — flushes all messages sent to the shell
+  * `h/0`       — prints this help message
+  * `h/1`       — prints help for the given module, function or macro
+  * `l/1`       — loads the given module's beam code and purges the current version
+  * `ls/0`      — lists the contents of the current directory
+  * `ls/1`      — lists the contents of the specified directory
+  * `m/0`       — prints loaded modules
+  * `pwd/0`     — prints the current working directory
+  * `r/1`       — recompiles and reloads the given module's source file
+  * `respawn/0` — respawns the current shell
+  * `s/1`       — prints spec information
+  * `t/1`       — prints type information
+  * `v/0`       — prints the history of commands evaluated in the session
+  * `v/1`       — retrieves the nth value from the history
   * `import_file/1`
-              — evaluates the given file in the shell's context
+                — evaluates the given file in the shell's context
 
   Help for functions in this module can be consulted
   directly from the command line, as an example, try:
@@ -83,7 +84,7 @@ defmodule IEx.Helpers do
   Clear the console screen.
   """
   def clear do
-    IO.write [ IO.ANSI.home, IO.ANSI.clear ]
+    IO.write [IO.ANSI.home, IO.ANSI.clear]
     dont_display_result
   end
 
@@ -268,9 +269,9 @@ defmodule IEx.Helpers do
     IEx.History.each(&print_history_entry(&1, inspect_opts))
   end
 
-  defp print_history_entry(config, inspect_opts) do
-    IO.write IEx.color(:info, "#{config.counter}: #{config.cache}#=> ")
-    IO.puts  IEx.color(:eval_result, "#{inspect config.result, inspect_opts}\n")
+  defp print_history_entry({ counter, cache, result }, inspect_opts) do
+    IO.write IEx.color(:eval_info, "#{counter}: #{cache}#=> ")
+    IO.puts  IEx.color(:eval_result, "#{inspect result, inspect_opts}\n")
   end
 
   @doc """
@@ -280,7 +281,7 @@ defmodule IEx.Helpers do
   For instance, v(-1) returns the result of the last evaluated expression.
   """
   def v(n) do
-    IEx.History.nth(n).result
+    IEx.History.nth(n) |> elem(2)
   end
 
   @doc """
@@ -350,7 +351,7 @@ defmodule IEx.Helpers do
   Prints the current working directory.
   """
   def pwd do
-    IO.puts IEx.color(:info, System.cwd!)
+    IO.puts IEx.color(:eval_info, System.cwd!)
   end
 
   @doc """
@@ -360,7 +361,7 @@ defmodule IEx.Helpers do
     case File.cd(expand_home(directory)) do
       :ok -> pwd
       { :error, :enoent } ->
-        IO.puts IEx.color(:error, "No directory #{directory}")
+        IO.puts IEx.color(:eval_error, "No directory #{directory}")
     end
   end
 
@@ -376,10 +377,10 @@ defmodule IEx.Helpers do
         ls_print(path, sorted_items)
 
       { :error, :enoent } ->
-        IO.puts IEx.color(:error, "No such file or directory #{path}")
+        IO.puts IEx.color(:eval_error, "No such file or directory #{path}")
 
       { :error, :enotdir } ->
-        IO.puts IEx.color(:info, Path.absname(path))
+        IO.puts IEx.color(:eval_info, Path.absname(path))
     end
   end
 
@@ -420,11 +421,24 @@ defmodule IEx.Helpers do
   defp format_item(path, representation) do
     case File.stat(path) do
       { :ok, File.Stat[type: :device] } ->
-        IEx.color(:device, representation)
+        IEx.color(:ls_device, representation)
       { :ok, File.Stat[type: :directory] } ->
-        IEx.color(:directory, representation)
+        IEx.color(:ls_directory, representation)
       _ ->
         representation
+    end
+  end
+
+  @doc """
+  Respawns the current shell by starting a new
+  process and a new scope. Returns true if it worked.
+  """
+  def respawn do
+    if whereis = IEx.Server.whereis do
+      whereis <- { :respawn, self }
+      true
+    else
+      false
     end
   end
 

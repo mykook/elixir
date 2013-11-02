@@ -66,7 +66,7 @@ defmodule Mix.Deps do
   """
 
   @doc """
-  Return all dependencies recursively as a `Mix.Dep` record.
+  Returns all dependencies recursively as a `Mix.Dep` record.
 
   ## Exceptions
 
@@ -95,7 +95,8 @@ defmodule Mix.Deps do
   end
 
   @doc """
-  Return all direct child dependencies for the current project.
+  Returns all children dependencies for the current project.
+  Umbrella projects have their apps treated as direct dependencies.
 
   ## Exceptions
 
@@ -105,7 +106,7 @@ defmodule Mix.Deps do
   defdelegate children(), to: Mix.Deps.Retriever
 
   @doc """
-  Return all given dependencies and their depending dependencies.
+  Returns all given dependencies and their depending dependencies.
   """
   def with_depending(deps, all_deps // all) do
     deps ++ do_with_depending(deps, all_deps)
@@ -154,6 +155,9 @@ defmodule Mix.Deps do
   Run the given `fun` inside the given dependency project by
   changing the current working directory and loading the given
   project onto the project stack.
+
+  In case the project is a rebar dependency, a `Mix.Rebar` project
+  will be pushed into the stack to simulate the rebar configuration.
   """
   def in_dependency(dep, post_config // [], fun)
 
@@ -162,7 +166,7 @@ defmodule Mix.Deps do
     Mix.Project.post_config(post_config)
     Mix.Project.push(Mix.Rebar)
     try do
-      File.cd!(opts[:dest], fn -> fun.(nil) end)
+      File.cd!(opts[:dest], fn -> fun.(Mix.Rebar) end)
     after
       Mix.Project.pop
     end
@@ -181,7 +185,7 @@ defmodule Mix.Deps do
   end
 
   @doc """
-  Format the status of a dependency.
+  Formats the status of a dependency.
   """
   def format_status(Mix.Dep[status: { :ok, _vsn }]),
     do: "ok"
@@ -201,20 +205,22 @@ defmodule Mix.Deps do
   def format_status(Mix.Dep[status: { :lockmismatch, _ }]),
     do: "lock mismatch: the dependency is out of date"
 
+  def format_status(Mix.Dep[status: :lockoutdated]),
+    do: "lock outdated: the lock is outdated compared to the options in your mixfile"
+
   def format_status(Mix.Dep[status: :nolock]),
     do: "the dependency is not locked"
 
-  def format_status(Mix.Dep[status: { :diverged, other }, opts: opts] = dep) do
-    "different specs were given for this dependency, choose one in your deps:\n" <>
-    "> In #{Path.relative_to_cwd(dep.from)}:\n$ #{inspect Dict.drop(opts, [:dest]), pretty: true}\n" <>
-    "> In #{Path.relative_to_cwd(other.from)}:\n$ #{inspect Dict.drop(other.opts, [:dest]), pretty: true}\n"
+  def format_status(Mix.Dep[app: app, status: { :diverged, other }] = dep) do
+    "different specs were given for the #{inspect app} app:\n" <>
+    "#{dep_status(dep)}#{dep_status(other)}" <>
+    "\n  Ensure they match or specify one in your #{inspect Mix.Project.get} deps and set `override: true`"
   end
 
-  def format_status(Mix.Dep[status: { :overriden, other }, opts: opts] = dep) do
-    "the dependency is overriding another dependency of one of your dependencies, " <>
-    "if this is intended set `override: true` in the options\n" <>
-    "> In #{Path.relative_to_cwd(dep.from)}:\n$ #{inspect opts}\n" <>
-    "> In #{Path.relative_to_cwd(other.from)}:\n$ #{inspect other.opts}\n"
+  def format_status(Mix.Dep[app: app, status: { :overriden, other }] = dep) do
+    "the dependency #{app} in #{Path.relative_to_cwd(dep.from)} is overriding a child dependency:\n" <>
+    "#{dep_status(dep)}#{dep_status(other)}" <>
+    "\n  Specify one in your #{inspect Mix.Project.get} deps and set `override: true`"
   end
 
   def format_status(Mix.Dep[status: { :unavailable, _ }]),
@@ -223,22 +229,30 @@ defmodule Mix.Deps do
   def format_status(Mix.Dep[status: { :elixirlock, _ }]),
     do: "the dependency is built with an out-of-date elixir version, run `mix deps.get`"
 
+  defp dep_status(Mix.Dep[app: app, requirement: req, opts: opts, from: from]) do
+    info = { app, req, Dict.drop(opts, [:dest, :lock, :env]) }
+    "\n  > In #{Path.relative_to_cwd(from)}:\n    #{inspect info}\n"
+  end
+
   @doc """
   Check the lock for the given dependency and update its status accordingly.
   """
   def check_lock(Mix.Dep[scm: scm, app: app, opts: opts] = dep, lock) do
     if available?(dep) do
-      rev  = lock[app]
-      opts = Keyword.put(opts, :lock, rev)
+      if vsn = old_elixir_lock(dep) do
+        dep.status({ :elixirlock, vsn })
+      else
+        rev  = lock[app]
+        opts = Keyword.put(opts, :lock, rev)
 
-      cond do
-        vsn = old_elixir_lock(dep) ->
-          dep.status({ :elixirlock, vsn })
-        scm.matches_lock?(opts) ->
-          dep
-        true ->
-          status = if rev, do: { :lockmismatch, rev }, else: :nolock
-          dep.status(status)
+        case scm.lock_status(opts) do
+          :mismatch ->
+            dep.status(if rev, do: { :lockmismatch, rev }, else: :nolock)
+          :outdated ->
+            dep.status :lockoutdated
+          :ok ->
+            dep
+        end
       end
     else
       dep
@@ -246,7 +260,11 @@ defmodule Mix.Deps do
   end
 
   @doc """
-  Update the dependency inside the given project.
+  Updates the dependency.
+
+  This function is useful when the given dependency changes
+  (for example, it was just checked out) and you want to refetch
+  its information.
   """
   defdelegate update(dep), to: Mix.Deps.Retriever
 
@@ -259,24 +277,18 @@ defmodule Mix.Deps do
   @doc """
   Check if a dependency is available.
   """
-  def available?(Mix.Dep[status: { :overriden, _ }]),   do: false
-  def available?(Mix.Dep[status: { :diverged, _ }]),    do: false
-  def available?(Mix.Dep[status: { :unavailable, _ }]), do: false
+  def available?(Mix.Dep[status: { :overriden, _ }]),    do: false
+  def available?(Mix.Dep[status: { :diverged, _ }]),     do: false
+  def available?(Mix.Dep[status: { :unavailable, _ }]),  do: false
   def available?(_), do: true
 
   @doc """
-  Check if a dependency is part of an umbrella project as a top level project.
-  """
-  def in_umbrella?(Mix.Dep[opts: opts], apps_path) do
-    apps_path == Path.expand(Path.join(opts[:dest], ".."))
-  end
-
-  @doc """
-  Check if a dependency is out of date, considering its
+  Check if a dependency is out of date considering its
   lock status. Therefore, be sure to call `check_lock` before
   invoking this function.
   """
   def out_of_date?(Mix.Dep[status: { :lockmismatch, _ }]), do: true
+  def out_of_date?(Mix.Dep[status: :lockoutdated]),        do: true
   def out_of_date?(Mix.Dep[status: :nolock]),              do: true
   def out_of_date?(Mix.Dep[status: { :elixirlock, _ }]),   do: true
   def out_of_date?(dep),                                   do: not available?(dep)
@@ -287,34 +299,33 @@ defmodule Mix.Deps do
   def format_dep(Mix.Dep[scm: scm, app: app, status: status, opts: opts]) do
     version =
       case status do
-        { :ok, vsn } when vsn != nil -> "(#{vsn}) "
+        { :ok, vsn } when vsn != nil -> "#{vsn} "
         _ -> ""
       end
 
-    "#{app} #{version}#{inspect scm.format(opts)}"
+    "#{app} #{version}(#{scm.format(opts)})"
   end
 
   @doc """
-  Return all compile paths for the dependency.
+  Returns all compile paths for the dependency.
   """
-  def compile_paths(Mix.Dep[app: app, opts: opts, manager: manager]) do
+  def compile_path(Mix.Dep[app: app, opts: opts, manager: manager]) do
     if manager == :mix do
       Mix.Project.in_project app, opts[:dest], fn _ ->
-        Mix.Project.compile_paths
+        Mix.Project.compile_path
       end
     else
-      [ Path.join(opts[:dest], "ebin") ]
+      Path.join(opts[:dest], "ebin")
     end
   end
 
   @doc """
-  Return all load paths for the dependency.
+  Returns all load paths for the dependency.
   """
   def load_paths(Mix.Dep[manager: :mix, app: app, opts: opts]) do
-    paths = Mix.Project.in_project app, opts[:dest], fn _ ->
+    Mix.Project.in_project(app, opts[:dest], fn _ ->
       Mix.Project.load_paths
-    end
-    Enum.uniq paths
+    end) |> Enum.uniq
   end
 
   def load_paths(Mix.Dep[manager: :rebar, opts: opts, source: source]) do

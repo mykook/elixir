@@ -4,13 +4,12 @@ defmodule Mix.Tasks.Deps do
   import Mix.Deps, only: [all: 0, format_dep: 1, format_status: 1, check_lock: 2]
 
   @shortdoc "List dependencies and their status"
-  @recursive :both
 
   @moduledoc """
   List all dependencies and their status.
   The output is given as follows:
 
-    * APP [VERSION] SCM: LOCATION
+    * APP VERSION (SCM)
       [locked at REF]
       STATUS
 
@@ -25,7 +24,7 @@ defmodule Mix.Tasks.Deps do
       dep = check_lock(dep, lock)
       shell.info "* #{format_dep(dep)}"
       if (lock = lock[app]) && (formatted = scm.format_lock(lock)) do
-        shell.info "  locked at #{inspect formatted}"
+        shell.info "  locked at #{formatted}"
       end
       shell.info "  #{format_status dep}"
     end

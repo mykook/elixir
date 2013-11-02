@@ -67,10 +67,12 @@ defmodule RecordTest.Macros do
 
   # Ensure there is no conflict in a nested module
   # named record.
-  defrecord Record, [a: 1, b: 2]
+  defrecord Record, [a: 1, b: 2] do
+    alias Foo, as: Record, warn: false
+  end
 end
 
-defrecord RecordTest.FooTest, foo: nil, bar: nil 
+defrecord RecordTest.FooTest, foo: nil, bar: nil
 
 defmodule RecordTest do
   use ExUnit.Case, async: true
@@ -116,6 +118,16 @@ defmodule RecordTest do
     assert record.__record__(:index, :c) == nil
     record = RecordTest.FileInfo.new
     assert RecordTest.FileInfo.__record__(:index, :atime) == record.__record__(:index, :atime)
+  end
+
+  defmacrop compose_dynamic(opts) do
+    quote do
+      RecordTest.DynamicName[unquote_splicing(opts), { :b, "b" }]
+    end
+  end
+
+  test :compile_time_composition do
+    assert compose_dynamic(a: "a") == RecordTest.DynamicName[a: "a", b: "b"]
   end
 
   test :to_keywords do

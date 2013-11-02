@@ -24,8 +24,7 @@ defmodule Macro do
     [:!, :@, :^, :not, :+, :-, :~~~, :&]
   end
 
-  @typep precedence :: integer # Higher means binds stronger
-  @spec binary_op_props(atom) :: { :left|:right, precedence }
+  @spec binary_op_props(atom) :: { :left | :right, precedence :: integer }
   defp binary_op_props(o) do
     case o do
       :::                                                       -> {:right, 30}
@@ -49,7 +48,40 @@ defmodule Macro do
   end
 
   @doc """
-  Receives an expresion representing a possible definition
+  Breaks a pipeline expression into a list. Raises if
+  the pipeline is ill-formed.
+  """
+  @spec unpipe(Macro.t) :: [Macro.t]
+  def unpipe({ :|> , _, [left, right] }) do
+    [left|unpipe(right)]
+  end
+
+  def unpipe(other) do
+    [other]
+  end
+
+  @doc """
+  Pipes the given `expr` in to the `call_expr` as the
+  argument in the given `position`.
+  """
+  @spec pipe(Macro.t, Macro.t, integer) :: Macro.t | no_return
+  def pipe(expr, call_args, integer // 0)
+
+  def pipe(expr, { call, line, atom }, integer) when is_atom(atom) do
+    { call, line, List.insert_at([], integer, expr) }
+  end
+
+  def pipe(expr, { call, line, args }, integer) when is_list(args) do
+    { call, line, List.insert_at(args, integer, expr) }
+  end
+
+  def pipe(expr, call_args, _integer) do
+    raise ArgumentError,
+      message: "cannot pipe #{to_string expr} into #{to_string call_args}"
+  end
+
+  @doc """
+  Receives an expression representing a possible definition
   and extracts its arguments. It returns a tuple with the
   function name and the arguments list or `:error` if not
   a valid call syntax.
@@ -90,10 +122,10 @@ defmodule Macro do
       1
 
   """
-  @spec escape(Macro.t) :: Macro.t
-  @spec escape(Macro.t, Keyword.t) :: Macro.t
+  @spec escape(term) :: Macro.t
+  @spec escape(term, Keyword.t) :: Macro.t
   def escape(expr, opts // []) do
-    :elixir_quote.escape(expr, Keyword.get(opts, :unquote, false)) |> elem(0)
+    elem(:elixir_quote.escape(expr, Keyword.get(opts, :unquote, false)), 0)
   end
 
   @doc %S"""
@@ -210,7 +242,7 @@ defmodule Macro do
 
   # Variables
   def to_string({ var, _, atom } = ast, fun) when is_atom(atom) do
-    fun.(ast, atom_to_binary(var, :utf8))
+    fun.(ast, atom_to_binary(var))
   end
 
   # Aliases
@@ -241,22 +273,17 @@ defmodule Macro do
     fun.(ast, "{" <> Enum.map_join(args, ", ", &to_string(&1, fun)) <> "}")
   end
 
-  # List containers
-  def to_string({ :[], _, args } = ast, fun) do
-    fun.(ast, "[" <> Enum.map_join(args, ", ", &to_string(&1, fun)) <> "]")
-  end
-
   # Fn keyword
-  def to_string({ :fn, _, [[do: { :->, _, [{_, _, tuple}] } = arrow]] } = ast, fun)
+  def to_string({ :fn, _, [{ :->, _, [{_, _, tuple}] } = arrow] } = ast, fun)
       when not is_tuple(tuple) or elem(tuple, 0) != :__block__ do
     fun.(ast, "fn " <> arrow_to_string(arrow, fun) <> " end")
   end
 
-  def to_string({ :fn, _, [[do: { :->, _, [_] } = block]] } = ast, fun) do
+  def to_string({ :fn, _, [{ :->, _, [_] } = block] } = ast, fun) do
     fun.(ast, "fn " <> block_to_string(block, fun) <> "\nend")
   end
 
-  def to_string({ :fn, _, [[do: block]] } = ast, fun) do
+  def to_string({ :fn, _, [block] } = ast, fun) do
     block = adjust_new_lines block_to_string(block, fun), "\n  "
     fun.(ast, "fn\n  " <> block <> "\nend")
   end
@@ -283,16 +310,12 @@ defmodule Macro do
   end
 
   def to_string({ op, _, [arg] } = ast, fun) when op in unary_ops do
-    fun.(ast, atom_to_binary(op, :utf8) <> to_string(arg, fun))
+    fun.(ast, atom_to_binary(op) <> to_string(arg, fun))
   end
 
   # Access
   def to_string({ { :., _, [Kernel, :access] }, _, [left, right] } = ast, fun) do
-    fun.(ast, if right != [] and Keyword.keyword?(right) do
-      to_string(left, fun) <> to_string(right, fun)
-    else
-      to_string(left, fun) <> "[" <> to_string(right, fun) <> "]"
-    end)
+    fun.(ast, to_string(left, fun) <> to_string(right, fun))
   end
 
   # All other calls
@@ -310,11 +333,11 @@ defmodule Macro do
   end
 
   # Lists
-  def to_string(list = ast, fun) when is_list(list) do
+  def to_string(list, fun) when is_list(list) do
     if Keyword.keyword?(list) do
-      fun.(ast, "[" <> kw_list_to_string(list, fun) <> "]")
+      fun.(list, "[" <> kw_list_to_string(list, fun) <> "]")
     else
-      to_string({ :[], [], list }, fun)
+      fun.(list, "[" <> Enum.map_join(list, ", ", &to_string(&1, fun)) <> "]")
     end
   end
 
@@ -332,7 +355,7 @@ defmodule Macro do
   defp module_to_string(atom, _fun) when is_atom(atom), do: inspect(atom, raw: true)
   defp module_to_string(other, fun), do: call_to_string(other, fun)
 
-  defp call_to_string(atom, _fun) when is_atom(atom), do: atom_to_binary(atom, :utf8)
+  defp call_to_string(atom, _fun) when is_atom(atom), do: atom_to_binary(atom)
   defp call_to_string({ :., _, [arg] }, fun),         do: module_to_string(arg, fun) <> "."
   defp call_to_string({ :., _, [left, right] }, fun), do: module_to_string(left, fun) <> "." <> call_to_string(right, fun)
   defp call_to_string(other, fun),                    do: to_string(other, fun)
@@ -364,7 +387,7 @@ defmodule Macro do
 
   defp kw_block_to_string(key, value, fun) do
     block = adjust_new_lines block_to_string(value, fun), "\n  "
-    atom_to_binary(key, :utf8) <> "\n  " <> block <> "\n"
+    atom_to_binary(key) <> "\n  " <> block <> "\n"
   end
 
   defp block_to_string({ :->, _, exprs }, fun) do
@@ -507,21 +530,21 @@ defmodule Macro do
 
   """
   def expand_once(ast, env) do
-    expand_once(ast, env, nil) |> elem(0)
+    elem(expand_once(ast, env, nil), 0)
   end
 
   defp expand_once({ :__aliases__, _, _ } = original, env, cache) do
-    case :elixir_aliases.expand(original, env.aliases, env.macro_aliases) do
+    case :elixir_aliases.expand(original, env.aliases, env.macro_aliases, env.lexical_tracker) do
       receiver when is_atom(receiver) ->
-        :elixir_tracker.record_alias(receiver, env.module)
+        :elixir_lexical.record_remote(receiver, env.lexical_tracker)
         { receiver, true, cache }
       aliases ->
-        aliases = lc alias inlist aliases, do: (expand_once(alias, env, cache) |> elem(0))
+        aliases = lc alias inlist aliases, do: elem(expand_once(alias, env, cache), 0)
 
         case :lists.all(&is_atom/1, aliases) do
           true ->
             receiver = :elixir_aliases.concat(aliases)
-            :elixir_tracker.record_alias(receiver, env.module)
+            :elixir_lexical.record_remote(receiver, env.lexical_tracker)
             { receiver, true, cache }
           false -> { original, false, cache }
         end
@@ -609,7 +632,7 @@ defmodule Macro do
   expansion works and `expand_all/2` for recursive expansion.
   """
   def expand(tree, env) do
-    expand(tree, env, nil) |> elem(0)
+    elem(expand(tree, env, nil), 0)
   end
 
   @doc false # Used internally by Elixir
@@ -625,36 +648,10 @@ defmodule Macro do
     { tree, cache }
   end
 
-  @doc %S"""
-  Receives a AST node and expands it until it no longer represents
-  a macro. Then it expands all of its children recursively.
-
-  The documentation for `expand_once/2` goes into more detail
-  on how expansion works. Keep in mind that `expand_all/2` is
-  naive as it doesn't mutate the environment. Take this example:
-
-      quoted = quote do: __MODULE__
-      Macro.to_string Macro.expand_all(quoted, __ENV__)
-      #=> "nil"
-
-  The example above, works as expected. Outside of a module,
-  `__MODULE__` returns `nil`. Now consider this variation:
-
-      quoted = quote do
-        defmodule Foo, do: __MODULE__
-      end
-      Macro.to_string Macro.expand_all(quoted, __ENV__)
-      #=> "defmodule(Foo) do\n  nil\nend"
-
-  One would expect `__MODULE__` to be expanded to `Foo`
-  but that is not the case since all the expansion is done
-  based on the environment `__ENV__`. This behaviour is on
-  purpose, as the proper expansion would require passing through
-  the whole Elixir compiler by actually executing the code, which
-  is beyond the scope of this function.
-  """
+  @doc false
   def expand_all(tree, env) do
-    expand_all(tree, env, nil) |> elem(0)
+    IO.write "Macro.expand_all/2 is deprecated, please avoid recursive code expansion\n#{Exception.format_stacktrace}"
+    elem(expand_all(tree, env, nil), 0)
   end
 
   @doc false # Used internally by Elixir
@@ -692,7 +689,7 @@ defmodule Macro do
     do_safe_term(terms) || :ok
   end
 
-  defp do_safe_term({ local, _, terms }) when local in [:{}, :[], :__aliases__] do
+  defp do_safe_term({ local, _, terms }) when local in [:{}, :__aliases__] do
     do_safe_term(terms)
   end
 

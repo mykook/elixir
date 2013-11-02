@@ -1,3 +1,50 @@
+# v0.11.0 (2013-11-02)
+
+* Enhancements
+  * [Code] Eval now returns variables from other contexts
+  * [Dict] Document and enforce all dicts use the match operator (`===`) when checking for keys
+  * [Enum] Add `Enum.slice/2` with a range
+  * [Enum] Document and enforce `Enum.member?/2` to use the match operator (`===`)
+  * [IEx] Split `IEx.Evaluator` from `IEx.Server` to allow custom evaluators
+  * [IEx] Add support for `IEx.pry` which halts a given process for inspection
+  * [IO] Add specs and allow some IO APIs to receive any data that implements `String.Chars`
+  * [Kernel] Improve stacktraces on command line interfaces
+  * [Kernel] Sigils can now handle balanced tokens as in `%s(f(o)o)`
+  * [Kernel] Emit warnings when an alias is not used
+  * [Macro] Add `Macro.pipe/3` and `Macro.unpipe/1` for building pipelines
+  * [Mix] Allow umbrella children to share dependencies between them
+  * [Mix] Allow mix to be escriptize'd
+  * [Mix] Speed mix projects compilation by relying on more manifests information
+  * [Protocol] Protocols now provide `impl_for/1` and `impl_for!/1` functions which receive a structure and returns its respective implementation, otherwise returns nil or an error
+  * [Set] Document and enforce all sets use the match operator (`===`) when checking for keys
+  * [String] Update to Unicode 6.3.0
+  * [String] Add `Enum.slice/2` with a range
+
+* Bug fixes
+  * [Exception] Ensure `defexception` fields can be set dynamically
+  * [Kernel] Guarantee aliases hygiene is respected when the current module name is not known upfront
+  * [Kernel] `Kernel.access/2` no longer flattens lists
+  * [Mix] Ensure cyclic dependencies are properly handled
+  * [String] Implement the extended grapheme cluster algorithm for `String` operations
+
+* Deprecations
+  * [Kernel] `pid_to_list/1`, `list_to_pid/1`, `binary_to_atom/2`, `binary_to_existing_atom/2` and `atom_to_binary/2` are deprecated in favor of their counterparts in the `:erlang` module
+  * [Kernel] `insert_elem/3` and `delete_elem/2` are deprecated in favor of `Tuple.insert_at/3` and `Tuple.delete_at/2`
+  * [Kernel] Use of `in` inside matches (as in `x in [1,2,3] -> x`) is deprecated in favor of the guard syntax (`x when x in [1,2,3]`)
+  * [Macro] `Macro.expand_all/2` is deprecated
+  * [Protocol] `@only` and `@except` in protocols are now deprecated
+  * [Protocol] Protocols no longer fallback to `Any` out of the box (this functionality needs to be explicitly enabled by setting `@fallback_to_any` to true)
+  * [String] `String.to_integer/1` and `String.to_float/1` are deprecated in favor of `Integer.parse/1` and `Float.parse/1`
+
+* Backwards incompatible changes
+  * [CLI] Reading `.elixirrc` has been dropped in favor of setting env vars
+  * [Kernel] `Kernel.access/2` now expects the second argument to be a compile time list
+  * [Kernel] `fn -> end` quoted expression is no longer wrapped in a `do` keyword
+  * [Kernel] Quoted variables from the same module must be explicitly shared. Previously, if a function returned `quote do: a = 1`, another function from the same module could access it as `quote do: a`. This has been fixed and the variables must be explicitly shared with `var!(a, __MODULE__)`
+  * [Mix] Umbrella apps now treat children apps as dependencies. This means all dependencies will be checked out in the umbrela `deps` directory. On upgrade, child apps need to point to the umbrella project by setting `deps_path: "../../deps_path", lockfile: "../../mix.lock"` in their project config
+  * [Process] `Process.group_leader/2` args have been reversed so the "subject" comes first
+  * [Protocol] Protocol no longer dispatches to `Number`, but to `Integer` and `Float`
+
 # v0.10.3 (2013-10-02)
 
 * Enhancements

@@ -131,48 +131,6 @@ defmodule Mix.Project do
   end
 
   @doc """
-  Runs `fun` in the current project.
-
-  The goal of this function is to transparently abstract umbrella projects.
-  So if you want to gather data from a project, like beam files, you can
-  use this function to transparently go through the project, regardless
-  if it is an umbrella project or not.
-  """
-  def recur(post_config // [], fun) do
-    if apps_path = config[:apps_path] do
-      paths = Path.wildcard(Path.join(apps_path, "*"))
-
-      paths
-      |> Enum.filter(&File.dir?(&1))
-      |> extract_projects
-      |> filter_projects(config[:apps])
-      |> topsort_projects(Path.expand(apps_path))
-      |> recur_projects(post_config, fun)
-    else
-      # Note that post_config isnt used for this case
-      [fun.(get)]
-    end
-  end
-
-  defp extract_projects(paths) do
-    lc path inlist paths do
-      app = path |> Path.basename |> String.downcase |> binary_to_atom
-      { app, path }
-    end
-  end
-
-  defp filter_projects(pairs, nil), do: pairs
-  defp filter_projects(pairs, apps) when is_list(apps) do
-    lc { app, _ } = pair inlist pairs, app in apps, do: pair
-  end
-
-  defp recur_projects(pairs, post_config, fun) do
-    lc { app, path } inlist pairs do
-      in_project(app, path, post_config, fun)
-    end
-  end
-
-  @doc """
   Runs the given `fun` inside the given project by changing
   the current working directory and loading the given project
   onto the project stack.
@@ -199,20 +157,20 @@ defmodule Mix.Project do
   Returns the paths this project compiles to,
   collecting all `:compile_path` in case of umbrella apps.
   """
-  def compile_paths do
-    recur(fn _ -> Path.expand config[:compile_path] end)
+  def compile_path do
+    Path.expand config[:compile_path]
   end
 
   @doc """
-  Returns all load paths for this project,
-  collecting all `:load_paths` in case of umbrella apps.
+  Returns all load paths for this project, collecting
+  all `:load_paths` in case of umbrella apps.
   """
   def load_paths do
-    paths =
-      recur(fn _ ->
-        Enum.map(config[:load_paths], &Path.expand(&1))
-      end) |> Enum.concat
-    paths ++ compile_paths
+    if umbrella? do
+      []
+    else
+      [compile_path]
+    end ++ Enum.map(config[:load_paths], &Path.expand(&1))
   end
 
   # Loads mix.exs in the current directory or loads the project from the
@@ -240,37 +198,6 @@ defmodule Mix.Project do
       Mix.Server.cast({ :mixfile_cache, app, new_proj })
       new_proj
     end
-  end
-
-  # Sort projects in dependency order
-  defp topsort_projects(projects, apps_path) do
-    graph = :digraph.new
-
-    Enum.each projects, fn { app, app_path } ->
-      :digraph.add_vertex(graph, app, app_path)
-    end
-
-    Enum.each projects, fn { app, app_path } ->
-      in_project app, app_path, fn _ ->
-        Enum.each Mix.Deps.children, fn dep ->
-          if Mix.Deps.available?(dep) and Mix.Deps.in_umbrella?(dep, apps_path) do
-            :digraph.add_edge(graph, dep.app, app)
-          end
-        end
-      end
-    end
-
-    unless :digraph_utils.is_acyclic(graph) do
-      raise Mix.Error, message: "Could not dependency sort umbrella projects. " <>
-        "There are cycles in the dependency graph."
-    end
-
-    vertices = :digraph_utils.topsort(graph)
-    projects = Enum.map vertices, fn app ->
-      :digraph.vertex(graph, app)
-    end
-    :digraph.delete(graph)
-    projects
   end
 
   defp default_config do

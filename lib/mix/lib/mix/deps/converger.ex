@@ -40,7 +40,7 @@ defmodule Mix.Deps.Converger do
   #         6) f
   #           7) d
   #
-  # Notice that the `d` dependency exists as a child of `g`
+  # Notice that the `d` dependency exists as a child of `b`
   # and child of `f`. In case the dependency is the same,
   # we proceed. However, if there is a conflict, for instance
   # different git repositories is used as source in each, we
@@ -67,13 +67,18 @@ defmodule Mix.Deps.Converger do
     cond do
       new_acc = overriden_deps(acc, upper_breadths, dep) ->
         all(t, new_acc, upper_breadths, current_breadths, config, callback, rest)
-      ({ diverged_acc, diverged } = diverged_deps(acc, dep)) && diverged ->
-        all(t, diverged_acc, upper_breadths, current_breadths, config, callback, rest)
+      new_acc = diverged_deps(acc, dep) ->
+        all(t, new_acc, upper_breadths, current_breadths, config, callback, rest)
       true ->
         { dep, rest } = callback.(dep, rest)
+
+        # After we invoke the callback (which may actually fetch the
+        # dependency) we get all direct childrens for the next one.
+        # Note that we need to reverse the deps, so the final order
+        # is as expected.
         deps = Mix.Deps.Retriever.children(dep, config)
         { acc, rest } = all(t, [dep.deps(deps)|acc], upper_breadths, current_breadths, config, callback, rest)
-        all(deps, acc, current_breadths, deps ++ current_breadths, config, callback, rest)
+        all(Enum.reverse(deps), acc, current_breadths, deps ++ current_breadths, config, callback, rest)
     end
   end
 
@@ -108,7 +113,13 @@ defmodule Mix.Deps.Converger do
           end
         end)
 
-      [ overrider | Enum.reverse(acc) ]
+      if overrider.deps == [] do
+        [overrider | Enum.reverse(acc)]
+      else
+        dep = hd(overrider.deps).app
+        { before_dep, after_dep } = Enum.split_while(acc, &(&1.app != dep))
+        Enum.reverse(before_dep ++ [overrider] ++ after_dep)
+      end
     end
   end
 
@@ -119,15 +130,21 @@ defmodule Mix.Deps.Converger do
   defp diverged_deps(list, dep) do
     Mix.Dep[app: app] = dep
 
-    Enum.map_reduce list, false, fn(other, diverged) ->
-      Mix.Dep[app: other_app] = other
+    { acc, match } =
+      Enum.map_reduce list, false, fn(other, match) ->
+        Mix.Dep[app: other_app] = other
 
-      if app != other_app || converge?(dep, other) do
-        { other, diverged }
-      else
-        { other.status({ :diverged, dep }), true }
+        cond do
+          app != other_app ->
+            { other, match }
+          converge?(dep, other) ->
+            { other, true }
+          true ->
+            { other.status({ :diverged, dep }), true }
+        end
       end
-    end
+
+    if match, do: acc
   end
 
   defp converge?(Mix.Dep[scm: scm, requirement: req, opts: opts1],

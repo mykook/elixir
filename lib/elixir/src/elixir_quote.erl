@@ -1,27 +1,40 @@
 %% Implements Elixir quote.
 -module(elixir_quote).
 -export([escape/2, erl_escape/3, erl_quote/4,
-         linify/2, unquote/4, tail_join/3, join/2]).
+         linify/2, linify/3, unquote/4, tail_join/3, join/2]).
 -include("elixir.hrl").
 
 %% Apply the line from site call on quoted contents.
 linify(Line, Exprs) when is_integer(Line) ->
-  do_linify(Line, Exprs).
+  do_linify(Line, nil, Exprs).
 
-do_linify(Line, { Left, Meta, Right }) ->
+linify(Line, Var, Exprs) when is_integer(Line) ->
+  do_linify(Line, Var, Exprs).
+
+do_linify(Line, { Receiver, Counter } = Var, { Left, Meta, Receiver }) when is_atom(Left), is_list(Meta) ->
+  NewMeta = case keyfind(counter, Meta) of
+    { counter, _ } -> Meta;
+    _ -> keystore(counter, Meta, Counter)
+  end,
+  do_tuple_linify(Line, Var, NewMeta, Left, Receiver);
+
+do_linify(Line, Var, { Left, Meta, Right }) when is_list(Meta) ->
+  do_tuple_linify(Line, Var, Meta, Left, Right);
+
+do_linify(Line, Var, { Left, Right }) ->
+  { do_linify(Line, Var, Left), do_linify(Line, Var, Right) };
+
+do_linify(Line, Var, List) when is_list(List) ->
+  [do_linify(Line, Var, X) || X <- List];
+
+do_linify(_, _, Else) -> Else.
+
+do_tuple_linify(Line, Var, Meta, Left, Right) ->
   NewMeta = case ?line(Meta) of
     0 -> keystore(line, Meta, Line);
     _ -> Meta
   end,
-  { do_linify(Line, Left), NewMeta, do_linify(Line, Right) };
-
-do_linify(Line, { Left, Right }) ->
-  { do_linify(Line, Left), do_linify(Line, Right) };
-
-do_linify(Line, List) when is_list(List) ->
-  [do_linify(Line, X) || X <- List];
-
-do_linify(_, Else) -> Else.
+  { do_linify(Line, Var, Left), NewMeta, do_linify(Line, Var, Right) }.
 
 %% Some expressions cannot be unquoted at compilation time.
 %% This function is responsible for doing runtime unquoting.
@@ -129,7 +142,24 @@ do_quote({ unquote, _Meta, [Expr] }, #elixir_quote{unquote=true} = Q, _) ->
 
 %% Context mark
 
-do_quote({ Def, Meta, Args }, #elixir_quote{escape=false} = Q, S) when ?defs(Def); Def == defmodule; Def == alias; Def == import ->
+do_quote({ defmodule, Meta, [_|_] = Args }, #elixir_quote{escape=false} = Q, S) ->
+  %% Only store the context if we actually have a full alias as
+  %% argument, otherwise the expression is being automatically
+  %% generated and we don't want the alias to count.
+  NewMeta =
+    case hd(Args) of
+      { '__aliases__', _, Atoms } ->
+        case lists:all(fun is_atom/1, Atoms) of
+          true  -> keystore(context, Meta, Q#elixir_quote.context);
+          false -> Meta
+        end;
+      _ ->
+        Meta
+    end,
+
+  do_quote_tuple({ defmodule, NewMeta, Args }, Q, S);
+
+do_quote({ Def, Meta, [_|_] = Args }, #elixir_quote{escape=false} = Q, S) when ?defs(Def); Def == alias; Def == import ->
   NewMeta = keystore(context, Meta, Q#elixir_quote.context),
   do_quote_tuple({ Def, NewMeta, Args }, Q, S);
 
@@ -144,7 +174,7 @@ do_quote({ 'alias!', _Meta, [Expr] }, #elixir_quote{aliases_hygiene=true} = Q, S
   { TExpr, TQ#elixir_quote{aliases_hygiene=true} };
 
 do_quote({ '__aliases__', Meta, [H|T] } = Alias, #elixir_quote{aliases_hygiene=true} = Q, S) when is_atom(H) and (H /= 'Elixir') ->
-  Annotation = case elixir_aliases:expand(Alias, S#elixir_scope.aliases, S#elixir_scope.macro_aliases) of
+  Annotation = case elixir_aliases:expand(Alias, S#elixir_scope.aliases, S#elixir_scope.macro_aliases, S#elixir_scope.lexical_tracker) of
     Atom when is_atom(Atom) -> Atom;
     Aliases when is_list(Aliases) -> false
   end,

@@ -476,13 +476,6 @@ defmodule HashSet do
   defp each_contract(acc, [m|bucket]), do: [m|each_contract(acc, bucket)]
   defp each_contract([], bucket), do: bucket
   defp each_contract(acc, []), do: acc
-
-  @doc false
-  def inspect_depth(trie(depth: d)), do: d
-  @doc false
-  def inspect_contract(trie(contract_on: c)), do: c
-  @doc false
-  def inspect_expand(trie(expand_on: e)), do: e
 end
 
 defimpl Enumerable, for: HashSet do

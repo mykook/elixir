@@ -134,7 +134,7 @@ defmodule MacroTest do
   end
 
   test :expand_once_with_main_plus_custom_alias do
-    alias Foo, as: Bar
+    alias Foo, as: Bar, warn: false
     assert Macro.expand_once(quote(do: Elixir.Bar.Baz), __ENV__) == Elixir.Bar.Baz
   end
 
@@ -157,19 +157,21 @@ defmodule MacroTest do
   end
 
   test :expand_once_with_imported_macro do
+    temp_var = { :x, [temp: true], Kernel }
     assert Macro.expand_once(quote(do: 1 || false), __ENV__) == (quote context: Kernel do
       case 1 do
-        var!(oror, false) in [false, nil] -> false
-        var!(oror, false) -> var!(oror, false)
+        unquote(temp_var) when unquote(temp_var) in [false, nil] -> false
+        unquote(temp_var) -> unquote(temp_var)
       end
     end)
   end
 
   test :expand_once_with_require_macro do
+    temp_var = { :x, [temp: true], Kernel }
     assert Macro.expand_once(quote(do: Kernel.||(1, false)), __ENV__) == (quote context: Kernel do
       case 1 do
-        var!(oror, false) in [false, nil] -> false
-        var!(oror, false) -> var!(oror, false)
+        unquote(temp_var) when unquote(temp_var) in [false, nil] -> false
+        unquote(temp_var) -> unquote(temp_var)
       end
     end)
   end
@@ -187,19 +189,11 @@ defmodule MacroTest do
   end
 
   test :expand do
+    temp_var = { :x, [temp: true], Kernel }
     assert Macro.expand(quote(do: oror(1, false)), __ENV__) == (quote context: Kernel do
       case 1 do
-        var!(oror, false) in [false, nil] -> false
-        var!(oror, false) -> var!(oror, false)
-      end
-    end)
-  end
-
-  test :expand_all do
-    assert Macro.expand_all(quote(do: oror(1, local_macro)), __ENV__) == (quote context: Kernel do
-      case 1 do
-        var!(oror, false) in [false, nil] -> :local_macro
-        var!(oror, false) -> var!(oror, false)
+        unquote(temp_var) when unquote(temp_var) in [false, nil] -> false
+        unquote(temp_var) -> unquote(temp_var)
       end
     end)
   end
@@ -420,5 +414,24 @@ defmodule MacroTest do
     assert env.stacktrace == [{ __MODULE__, :__MODULE__, 0, [file: "foo", line: 12] }]
     env = env.module(nil)
     assert env.stacktrace == [{ :elixir_compiler, :__FILE__, 2, [file: "foo", line: 12] }]
+  end
+
+  ## pipe/unpipe
+
+  test :pipe do
+    assert Macro.pipe(1, quote(do: foo)) == quote(do: foo(1))
+    assert Macro.pipe(1, quote(do: foo(2))) == quote(do: foo(1, 2))
+    assert Macro.pipe(1, quote(do: foo), -1) == quote(do: foo(1))
+    assert Macro.pipe(2, quote(do: foo(1)), -1) == quote(do: foo(1, 2))
+
+    assert_raise ArgumentError, "cannot pipe 1 into 2", fn ->
+      Macro.pipe(1, 2)
+    end
+  end
+
+  test :unpipe do
+    assert Macro.unpipe(quote(do: foo)) == quote(do: [foo])
+    assert Macro.unpipe(quote(do: foo |> bar)) == quote(do: [foo, bar])
+    assert Macro.unpipe(quote(do: foo |> bar |> baz)) == quote(do: [foo, bar, baz])
   end
 end

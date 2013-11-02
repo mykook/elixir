@@ -25,6 +25,10 @@ defmodule Kernel.ErrorsTest do
     assert_compile_fail TokenMissingError,
       "nofile:3: missing terminator: } (for sigil %r{ starting at line 1)",
       '%r{foo\n\n'
+
+    assert_compile_fail TokenMissingError,
+      "nofile:3: missing terminator: ) (for sigil %r( starting at line 1)",
+      '%r(f(oo)\n\n'
   end
 
   test :dot_terminator do
@@ -91,8 +95,8 @@ defmodule Kernel.ErrorsTest do
     assert is_list []
     assert is_list do: 1
     assert is_list List.flatten [1]
-    assert is_atom binary_to_atom "foo", :utf8
-    assert is_atom(binary_to_atom "foo", :utf8)
+    assert is_atom is_record 1..3, Range
+    assert is_atom(is_record 1..3, Range)
   end
 
   test :syntax_error_with_no_token do
@@ -463,7 +467,7 @@ defmodule Kernel.ErrorsTest do
   end
 
   test :invalid_access_protocol_not_alias do
-    assert_raise ArgumentError, "the access protocol cannot be used inside match clauses (for example, on the left hand side of a match or in function signatures)", fn ->
+    assert_raise ArgumentError, "dynamic access cannot be invoked inside match and guard clauses", fn ->
       defmodule ErrorsTest do
         def sample(config[integer: 0]), do: true
       end
@@ -479,7 +483,7 @@ defmodule Kernel.ErrorsTest do
   end
 
   test :invalid_access_protocol_not_keywords do
-    assert_raise ArgumentError, "expected contents inside brackets to be a Keyword", fn ->
+    assert_raise ArgumentError, "expected contents inside brackets to be a keyword list, got: [0]", fn ->
       defmodule ErrorsTest do
         def sample(Kernel.ErrorsTest.Config[0]), do: true
       end
@@ -579,16 +583,26 @@ defmodule Kernel.ErrorsTest do
     assert_compile_fail CompileError,
       "nofile:2: type foo() undefined",
       '''
-      defmodule Example do
+      defmodule ErrorsTest do
         @type omg :: foo
       end
       '''
 
     assert_compile_fail CompileError,
-      "nofile:2: spec for undefined function Example.omg/0",
+      "nofile:2: spec for undefined function ErrorsTest.omg/0",
       '''
-      defmodule Example do
+      defmodule ErrorsTest do
         @spec omg :: atom
+      end
+      '''
+  end
+
+  test :bad_unquoting do
+    assert_compile_fail SyntaxError,
+      "nofile: expected a valid quoted expression, got: {Range, 1, 3}",
+      '''
+      defmodule ErrorsTest do
+        def range(unquote(1..3)), do: :ok
       end
       '''
   end

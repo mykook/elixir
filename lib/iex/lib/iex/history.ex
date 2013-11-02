@@ -1,4 +1,4 @@
-defmodule IEx.History do
+ defmodule IEx.History do
   @moduledoc false
 
   @doc """
@@ -13,11 +13,10 @@ defmodule IEx.History do
   @doc """
   Appends one entry to the history with the given counter.
   """
-  def append(entry, counter) do
+  def append(entry, counter, limit) do
     Process.put({:iex_history, counter}, entry)
     Process.put(:iex_history_counter, counter+1)
 
-    limit = IEx.Options.get(:history_size)
     start_counter = Process.get(:iex_history_start_counter)
     should_collect = limit_history(start_counter, counter, limit, false)
     if should_collect do
@@ -37,11 +36,28 @@ defmodule IEx.History do
   defp limit_history(counter, max_counter, limit, should_collect) do
     if not should_collect do
       entry = Process.delete({:iex_history, counter})
-      should_collect = has_binary(entry.result)
+      should_collect = has_binary(entry)
     else
       Process.delete({:iex_history, counter})
     end
     limit_history(counter+1, max_counter, limit, should_collect)
+  end
+
+  @doc """
+  Removes all entries from the history and forces a garbage collection cycle.
+  """
+  def reset() do
+    # remove all entries
+    f = fn(key, _) ->
+      Process.delete(key)
+    end
+    each_pair(f)
+
+    # reset counter
+    counter = Process.get(:iex_history_counter)
+    Process.put(:iex_history_start_counter, counter)
+
+    collect_garbage()
   end
 
   # Checks val and each of its elements (if it is a list or a tuple)
@@ -99,26 +115,35 @@ defmodule IEx.History do
   end
 
   @doc """
-  Enumerates each item in the history.
+  Enumerates over all items in the history starting from the oldest one and
+  applies `fun` to each one in turn.
   """
   def each(fun) do
-    each(Process.get(:iex_history_start_counter),
-         Process.get(:iex_history_counter),
-         fun)
+    each_pair(fn _, item -> fun.(item) end)
   end
 
-  defp each(counter, max_counter, fun) when counter < max_counter do
-    entry = Process.get({:iex_history, counter})
-    fun.(entry)
-    each(counter+1, max_counter, fun)
+  # Private helper that invokes fun with both key and item.
+  defp each_pair(fun) do
+    each_pair(Process.get(:iex_history_start_counter),
+              Process.get(:iex_history_counter),
+              fun)
   end
 
-  defp each(_, _, _) do
+  defp each_pair(counter, max_counter, fun) when counter < max_counter do
+    key = {:iex_history, counter}
+    entry = Process.get(key)
+    fun.(key, entry)
+    each_pair(counter+1, max_counter, fun)
+  end
+
+  defp each_pair(_, _, _) do
     :ok
   end
 
   @doc """
-  Gets the nth item in the history.
+  Gets the nth item from the history.
+
+  If `n` < 0, the count starts from the most recent item and goes back in time.
   """
   def nth(n) do
     entry = case n do

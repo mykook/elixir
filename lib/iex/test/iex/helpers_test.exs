@@ -20,24 +20,24 @@ defmodule IEx.HelpersTest do
   end
 
   test "h helper" do
-    assert "# IEx.Helpers\n\nWelcome to Interactive Elixir" <> _
+    assert "* IEx.Helpers\n\nWelcome to Interactive Elixir" <> _
            = capture_iex("h")
   end
 
   test "h helper module" do
-    assert "# IEx.Helpers\n\nWelcome to Interactive Elixir" <> _ =
+    assert "* IEx.Helpers\n\nWelcome to Interactive Elixir" <> _ =
            capture_io(fn -> h IEx.Helpers end)
 
     assert capture_io(fn -> h :whatever end) ==
            "Could not load module :whatever, got: nofile\n"
 
     assert capture_io(fn -> h :lists end) ==
-           ":lists is an Erlang module and, as such, it was not compiled with docs\n"
+           ":lists is an Erlang module and, as such, it does not have Elixir-style docs\n"
   end
 
   test "h helper function" do
-    doc_1 = "* def test_fun_1()\n\nTest function 1\n"
-    doc_2 = "* def test_fun_1(arg)\n\nTest function 2\n"
+    doc_1 = "* def test_fun_1()\n\nTest function 1\n\n"
+    doc_2 = "* def test_fun_1(arg)\n\nTest function 2\n\n"
 
     assert capture_io(fn -> h IEx.HelpersTest.test_fun_1/0 end) == doc_1
     assert capture_io(fn -> h IEx.HelpersTest.test_fun_1/1 end) == doc_2
@@ -47,7 +47,7 @@ defmodule IEx.HelpersTest do
     assert :binary.match(output, doc_2)
 
     assert capture_io(fn -> h pwd end)
-           == "* def pwd()\n\nPrints the current working directory.\n\n"
+           == "* def pwd()\n\nPrints the current working directory.\n\n\n"
   end
 
   test "h helper function string" do
@@ -116,6 +116,17 @@ defmodule IEx.HelpersTest do
            = capture_iex("v(0)")
     assert capture_iex("1\n2\nv(2)") == "1\n2\n2"
     assert capture_iex("1\n2\nv(2)") == capture_iex("1\n2\nv(-1)")
+
+    assert capture_iex("1\n2\nIEx.History.reset\nv")
+           == String.rstrip """
+           1
+           2
+           true
+           3: IEx.History.reset
+           #=> true
+
+           :ok
+           """
   end
 
   test "flush helper" do
@@ -141,9 +152,9 @@ defmodule IEx.HelpersTest do
 
   test "import_file helper" do
     with_file "dot-iex", "variable = :hello\nimport IO", fn ->
-      assert "** (UndefinedFunctionError) undefined function: IEx.Helpers.variable/0" <> _
+      assert "** (RuntimeError) undefined function: variable/0" <> _
              = capture_iex("variable")
-      assert "** (UndefinedFunctionError) undefined function: IEx.Helpers.puts/1" <> _
+      assert "** (RuntimeError) undefined function: puts/1" <> _
              = capture_iex("puts \"hi\"")
 
       assert capture_iex("import_file \"dot-iex\"\nvariable\nputs \"hi\"")
@@ -156,11 +167,11 @@ defmodule IEx.HelpersTest do
     dot_1 = "variable = :hello\nimport IO"
 
     with_file ["dot-iex", "dot-iex-1"], [dot, dot_1], fn ->
-      assert "** (UndefinedFunctionError) undefined function: IEx.Helpers.parent/0" <> _
+      assert "** (RuntimeError) undefined function: parent/0" <> _
              = capture_iex("parent")
-      assert "** (UndefinedFunctionError) undefined function: IEx.Helpers.variable/0" <> _
+      assert "** (RuntimeError) undefined function: variable/0" <> _
              = capture_iex("variable")
-      assert "** (UndefinedFunctionError) undefined function: IEx.Helpers.puts/1" <> _
+      assert "** (RuntimeError) undefined function: puts/1" <> _
              = capture_iex("puts \"hi\"")
 
       assert capture_iex("import_file \"dot-iex\"\nvariable\nputs \"hi\"\nparent")

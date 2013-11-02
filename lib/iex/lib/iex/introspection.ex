@@ -1,6 +1,6 @@
+# Convenience helpers for showing docs, specs and types
+# from modules. Invoked directly from IEX.Helpers.
 defmodule IEx.Introspection do
-  # Convenience helpers for showing docs, specs and types
-  # from modules. Invoked directly from IEX.Helpers.
   @moduledoc false
 
   import IEx, only: [dont_display_result: 0]
@@ -12,23 +12,24 @@ defmodule IEx.Introspection do
         if function_exported?(module, :__info__, 1) do
           case module.__info__(:moduledoc) do
             { _, binary } when is_binary(binary) ->
-              IO.write IEx.color(:info, "# #{inspect module}\n\n" <> binary)
+              IEx.ANSIDocs.print_heading(inspect module)
+              IEx.ANSIDocs.print(binary)
             { _, _ } ->
               nodocs(inspect module)
             _ ->
-              IO.puts IEx.color(:error, "#{inspect module} was not compiled with docs")
+              IO.puts IEx.color(:eval_error, "#{inspect module} was not compiled with docs")
           end
         else
-          IO.puts IEx.color(:error, "#{inspect module} is an Erlang module and, as such, it was not compiled with docs")
+          IO.puts IEx.color(:eval_error, "#{inspect module} is an Erlang module and, as such, it does not have Elixir-style docs")
         end
       { :error, reason } ->
-        IO.puts IEx.color(:error, "Could not load module #{inspect module}, got: #{reason}")
+        IO.puts IEx.color(:eval_error, "Could not load module #{inspect module}, got: #{reason}")
     end
     dont_display_result
   end
 
   def h(_) do
-    IO.puts IEx.color(:error, "Invalid arguments for h helper")
+    IO.puts IEx.color(:eval_error, "Invalid arguments for h helper")
     dont_display_result
   end
 
@@ -51,7 +52,7 @@ defmodule IEx.Introspection do
       :ok ->
         :ok
       :no_docs ->
-        IO.puts IEx.color(:error, "#{inspect module} was not compiled with docs")
+        IO.puts IEx.color(:eval_error, "#{inspect module} was not compiled with docs")
       :not_found ->
         nodocs("#{inspect module}.#{function}")
     end
@@ -65,7 +66,7 @@ defmodule IEx.Introspection do
   end
 
   def h(_, _) do
-    IO.puts IEx.color(:error, "Invalid arguments for h helper")
+    IO.puts IEx.color(:eval_error, "Invalid arguments for h helper")
     dont_display_result
   end
 
@@ -101,7 +102,7 @@ defmodule IEx.Introspection do
       :ok ->
         :ok
       :no_docs ->
-        IO.puts IEx.color(:error, "#{inspect module} was not compiled with docs")
+        IO.puts IEx.color(:eval_error, "#{inspect module} was not compiled with docs")
       :not_found ->
         nodocs("#{inspect module}.#{function}/#{arity}")
     end
@@ -110,7 +111,7 @@ defmodule IEx.Introspection do
   end
 
   def h(_, _, _) do
-    IO.puts IEx.color(:error, "Invalid arguments for h helper")
+    IO.puts IEx.color(:eval_error, "Invalid arguments for h helper")
     dont_display_result
   end
 
@@ -157,8 +158,8 @@ defmodule IEx.Introspection do
 
   defp print_doc({ { fun, _ }, _line, kind, args, doc }) do
     args = Enum.map_join(args, ", ", &print_doc_arg(&1))
-    IO.puts IEx.color(:info, "* #{kind} #{fun}(#{args})\n")
-    if doc, do: IO.write IEx.color(:info, doc)
+    IEx.ANSIDocs.print_heading("#{kind} #{fun}(#{args})")
+    if doc, do: IEx.ANSIDocs.print(doc)
   end
 
   defp print_doc_arg({ ://, _, [left, right] }) do
@@ -171,10 +172,10 @@ defmodule IEx.Introspection do
 
   @doc false
   def t(module) do
-    types = lc type inlist Kernel.Typespec.beam_types(module), do: print_type(type)
-
-    if types == [] do
-      notypes(inspect module)
+    case Kernel.Typespec.beam_types(module) do
+      nil   -> nobeam(module)
+      []    -> notypes(inspect module)
+      types -> lc type inlist types, do: print_type(type)
     end
 
     dont_display_result
@@ -182,14 +183,18 @@ defmodule IEx.Introspection do
 
   @doc false
   def t(module, type) when is_atom(type) do
-    types = lc {_, {t, _, _args}} = typespec inlist Kernel.Typespec.beam_types(module),
-               t == type do
-      print_type(typespec)
-      typespec
-    end
+    case Kernel.Typespec.beam_types(module) do
+      nil   -> nobeam(module)
+      types ->
+        printed =
+          lc {_, {t, _, _args}} = typespec inlist types, t == type do
+            print_type(typespec)
+            typespec
+          end
 
-    if types == [] do
-       notypes("#{inspect module}.#{type}")
+        if printed == [] do
+          notypes("#{inspect module}.#{type}")
+        end
     end
 
     dont_display_result
@@ -197,14 +202,18 @@ defmodule IEx.Introspection do
 
   @doc false
   def t(module, type, arity) do
-    types = lc {_, {t, _, args}} = typespec inlist Kernel.Typespec.beam_types(module),
-               length(args) == arity and t == type, do: typespec
+    case Kernel.Typespec.beam_types(module) do
+      nil   -> nobeam(module)
+      types ->
+        printed =
+          lc {_, {t, _, args}} = typespec inlist types, t == type, length(args) == arity do
+            print_type(typespec)
+            typespec
+          end
 
-    case types do
-     [] ->
-       notypes("#{inspect module}.#{type}/#{arity}")
-     [type] ->
-       print_type(type)
+        if printed == [] do
+          notypes("#{inspect module}.#{type}")
+        end
     end
 
     dont_display_result
@@ -212,10 +221,10 @@ defmodule IEx.Introspection do
 
   @doc false
   def s(module) do
-    specs = lc spec inlist beam_specs(module), do: print_spec(spec)
-
-    if specs == [] do
-      nospecs(inspect module)
+    case beam_specs(module) do
+      nil   -> nobeam(module)
+      []    -> nospecs(inspect module)
+      specs -> lc spec inlist specs, do: print_spec(spec)
     end
 
     dont_display_result
@@ -223,14 +232,18 @@ defmodule IEx.Introspection do
 
   @doc false
   def s(module, function) when is_atom(function) do
-    specs = lc {_kind, {{f, _arity}, _spec}} = spec inlist beam_specs(module),
-               f == function do
-      print_spec(spec)
-      spec
-    end
+    case beam_specs(module) do
+      nil   -> nobeam(module)
+      specs ->
+        printed =
+          lc {_kind, {{f, _arity}, _spec}} = spec inlist specs, f == function do
+            print_spec(spec)
+            spec
+          end
 
-    if specs == [] do
-      nospecs("#{inspect module}.#{function}")
+        if printed == [] do
+          nospecs("#{inspect module}.#{function}")
+        end
     end
 
     dont_display_result
@@ -238,42 +251,62 @@ defmodule IEx.Introspection do
 
   @doc false
   def s(module, function, arity) do
-    specs = lc {_kind, {{f, a}, _spec}} = spec inlist beam_specs(module),
-               f == function and a == arity do
-      print_spec(spec)
-      spec
-    end
+    case beam_specs(module) do
+      nil   -> nobeam(module)
+      specs ->
+        printed =
+          lc {_kind, {{f, a}, _spec}} = spec inlist specs, f == function and a == arity do
+            print_spec(spec)
+            spec
+          end
 
-    if specs == [] do
-      nodocs("#{inspect module}.#{function}")
+        if printed == [] do
+          nospecs("#{inspect module}.#{function}")
+        end
     end
 
     dont_display_result
   end
 
   defp beam_specs(module) do
-    specs = Enum.map(Kernel.Typespec.beam_specs(module), &{:spec, &1})
-    callbacks = Enum.map(Kernel.Typespec.beam_callbacks(module), &{:callback, &1})
-    Enum.concat(specs, callbacks)
+    specs = beam_specs_tag(Kernel.Typespec.beam_specs(module), :spec)
+    callbacks = beam_specs_tag(Kernel.Typespec.beam_callbacks(module), :callback)
+    specs && callbacks && Enum.concat(specs, callbacks)
+  end
+
+  defp beam_specs_tag(nil, _), do: nil
+  defp beam_specs_tag(specs, tag) do
+    Enum.map(specs, &{ tag, &1 })
   end
 
   defp print_type({ kind, type }) do
     ast = Kernel.Typespec.type_to_ast(type)
-    IO.puts IEx.color(:info, "@#{kind} #{Macro.to_string(ast)}")
+    IO.puts IEx.color(:eval_info, "@#{kind} #{Macro.to_string(ast)}")
     true
   end
 
   defp print_spec({kind, { { name, _arity }, specs }}) do
     Enum.each specs, fn(spec) ->
       binary = Macro.to_string Kernel.Typespec.spec_to_ast(name, spec)
-      IO.puts IEx.color(:info, "@#{kind} #{binary}")
+      IO.puts IEx.color(:eval_info, "@#{kind} #{binary}")
     end
     true
   end
 
-  defp nospecs(for), do: nodocs(for, "specification")
-  defp notypes(for), do: nodocs(for, "type information")
-  defp nodocs(for, type // "documentation") do
-    IO.puts IEx.color(:error, "No #{type} for #{for} was found")
+  defp nobeam(module) do
+    case Code.ensure_loaded(module) do
+      { :module, _ } ->
+        IO.puts IEx.color(:eval_error, "Beam code not available for #{inspect module} or debug info is missing, cannot load typespecs")
+      { :error, reason } ->
+        IO.puts IEx.color(:eval_error, "Could not load module #{inspect module}, got: #{reason}")
+    end
+  end
+
+  defp nospecs(for), do: no(for, "specification")
+  defp notypes(for), do: no(for, "type information")
+  defp nodocs(for),  do: no(for, "documentation")
+
+  defp no(for, type) do
+    IO.puts IEx.color(:eval_error, "No #{type} for #{for} was found")
   end
 end

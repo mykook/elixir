@@ -19,11 +19,12 @@ INSTALL_PROGRAM = $(INSTALL) -m755
 define APP_TEMPLATE
 $(1): lib/$(1)/ebin/Elixir.$(2).beam lib/$(1)/ebin/$(1).app
 
-lib/$(1)/ebin/$(1).app:
+lib/$(1)/ebin/$(1).app: lib/$(1)/mix.exs
 	$(Q) cd lib/$(1) && ../../bin/elixir -e "Mix.Server.start_link(:dev)" -r mix.exs -e "Mix.Task.run('compile.app')"
 
 lib/$(1)/ebin/Elixir.$(2).beam: $(wildcard lib/$(1)/lib/*.ex) $(wildcard lib/$(1)/lib/*/*.ex) $(wildcard lib/$(1)/lib/*/*/*.ex)
 	@ echo "==> $(1) (compile)"
+	@ rm -rf lib/$(1)/ebin
 	$(Q) $$(ELIXIRC) "lib/$(1)/lib/**/*.ex" -o lib/$(1)/ebin
 
 test_$(1): $(1)
@@ -65,10 +66,10 @@ $(KERNEL): lib/elixir/lib/*.ex lib/elixir/lib/*/*.ex
 	$(Q) cd lib/elixir && $(REBAR) compile
 
 unicode: $(UNICODE)
-$(UNICODE): lib/elixir/priv/unicode.ex lib/elixir/priv/UnicodeData.txt lib/elixir/priv/NamedSequences.txt
+$(UNICODE): lib/elixir/priv/unicode.ex lib/elixir/priv/UnicodeData.txt lib/elixir/priv/GraphemeBreakProperty.txt
 	@ echo "==> unicode (compile)";
 	@ echo "This step can take up to a minute to compile in order to embed the Unicode database"
-	$(Q) $(ELIXIRC) lib/elixir/priv/unicode.ex -o lib/elixir/ebin;
+	$(Q) $(ELIXIRC) lib/elixir/priv/unicode.ex -o lib/elixir/ebin --no-debug-info;
 
 $(eval $(call APP_TEMPLATE,ex_unit,ExUnit))
 $(eval $(call APP_TEMPLATE,eex,EEx))

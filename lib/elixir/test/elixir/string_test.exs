@@ -197,15 +197,21 @@ defmodule StringTest do
     assert String.codepoints("世界中の一番") == ["世", "界", "中", "の", "一", "番"] # japanese
     assert String.codepoints("がガちゃ") == ["が", "ガ", "ち", "ゃ"]
     assert String.codepoints("") == []
-  end
-
-  test :mixed_codepoints do
     assert String.codepoints("ϖͲϥЫݎߟΈټϘለДШव׆ש؇؊صلټܗݎޥޘ߉ऌ૫ሏᶆ℆ℙℱ ⅚Ⅷ↠∈⌘①ﬃ") ==
            ["ϖ", "Ͳ", "ϥ", "Ы", "ݎ", "ߟ", "Έ", "ټ", "Ϙ", "ለ", "Д", "Ш", "व", "׆", "ש", "؇", "؊", "ص", "ل", "ټ", "ܗ", "ݎ", "ޥ", "ޘ", "߉", "ऌ", "૫", "ሏ", "ᶆ", "℆", "ℙ", "ℱ", " ", "⅚", "Ⅷ", "↠", "∈", "⌘", "①", "ﬃ"]
   end
 
   test :graphemes do
+    # Extended
     assert String.graphemes("Ā̀stute") == ["Ā̀", "s", "t", "u", "t", "e"]
+    # CLRF
+    assert String.graphemes("\n\r\f") == ["\n\r", "\f"]
+    # Regional indicator
+    assert String.graphemes("\x{1F1E6}\x{1F1E7}\x{1F1E8}") == ["\x{1F1E6}\x{1F1E7}\x{1F1E8}"]
+    # Hangul
+    assert String.graphemes("\x{1100}\x{115D}\x{B4A4}") == ["ᄀᅝ뒤"]
+    # Special Marking with Extended
+    assert String.graphemes("a\x{0300}\x{0903}") == ["a\x{0300}\x{0903}"]
   end
 
   test :next_grapheme do
@@ -283,6 +289,26 @@ defmodule StringTest do
     assert String.slice("elixir", -5, 0) == ""
     assert String.slice("", 0, 1) == ""
     assert String.slice("", 1, 1) == nil
+
+    assert String.slice("elixir", 1..3) == "lix"
+    assert String.slice("elixir", -5..-3) == "lix"
+    assert String.slice("elixir", -5..3) == "lix"
+    assert String.slice("あいうえお", 2..3) == "うえ"
+    assert String.slice("ειξήριολ", 2..4) == "ξήρ"
+    assert String.slice("elixir", 3..6) == "xir"
+    assert String.slice("あいうえお", 3..7) == "えお"
+    assert String.slice("ειξήριολ", 5..8) == "ιολ"
+    assert String.slice("elixir", -3..-2) == "xi"
+    assert String.slice("あいうえお", -4..-2) == "いうえ"
+    assert String.slice("ειξήριολ", -5..-3) == "ήρι"
+    assert String.slice("elixir", 8..9) == nil
+    assert String.slice("あいうえお", 6..7) == nil
+    assert String.slice("ειξήριολ", 8..8) == ""
+    assert String.slice("ειξήριολ", 9..9) == nil
+    assert String.slice("", 0..0) == ""
+    assert String.slice("", 1..1) == nil
+    assert String.slice("あいうえお", -2..-4) == nil
+    assert String.slice("あいうえお", -10..-15) == nil
   end
 
   test :valid? do
@@ -301,29 +327,6 @@ defmodule StringTest do
 
     refute String.valid_character?("\x{ffff}")
     refute String.valid_character?("ab")
-  end
-
-  test :to_integer do
-    assert String.to_integer("12") === {12, ""}
-    assert String.to_integer("-12") === {-12, ""}
-    assert String.to_integer("123456789") === {123456789, ""}
-    assert String.to_integer("12.5") === {12, ".5"}
-    assert String.to_integer("7.5e-3") === {7, ".5e-3"}
-    assert String.to_integer("12x") === {12, "x"}
-    assert String.to_integer("three") === :error
-  end
-
-  test :to_float do
-    assert String.to_float("12") === {12.0, ""}
-    assert String.to_float("-12") === {-12.0, ""}
-    assert String.to_float("123456789") === {123456789.0, ""}
-    assert String.to_float("12.5") === {12.5, ""}
-    assert String.to_float("-12.5") === {-12.5, ""}
-    assert String.to_float("7.5e3") === {7.5e3, ""}
-    assert String.to_float("7.5e-3") === {7.5e-3, ""}
-    assert String.to_float("12x") === {12.0, "x"}
-    assert String.to_float("12.5x") === {12.5, "x"}
-    assert String.to_float("pi") === :error
   end
 
   test :starts_with? do

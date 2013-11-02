@@ -148,8 +148,8 @@ defmodule Kernel do
   end
 
   @doc """
-  Boolean or. Arguments must be booleans.
-  Allowed in guard clauses.
+  Boolean or. Requires only the first argument to be a
+  boolean since it short-circuits. Allowed in guard clauses.
 
   ## Examples
 
@@ -160,8 +160,8 @@ defmodule Kernel do
   defmacro left or right
 
   @doc """
-  Boolean and. Arguments must be booleans.
-  Allowed in guard clauses.
+  Boolean and. Requires only the first argument to be a
+  boolean since it short-circuits. Allowed in guard clauses.
 
   ## Examples
 
@@ -172,8 +172,8 @@ defmodule Kernel do
   defmacro left and right
 
   @doc """
-  Boolean exclusive-or. Arguments must be booleans. Returns `true` if and only if
-  both arguments are different.
+  Boolean exclusive-or. Arguments must be booleans.
+  Returns `true` if and only if both arguments are different.
   Allowed in guard clauses.
 
   ## Examples
@@ -395,21 +395,9 @@ defmodule Kernel do
     :erlang.abs(number)
   end
 
-  @doc """
-  Returns a binary which corresponds to the text representation of `atom`.
-  If `encoding` is latin1, there will be one byte for each character in the text
-  representation. If `encoding` is utf8 or unicode, the characters will be encoded
-  using UTF-8 (meaning that characters from 16#80 up to 0xFF will be encoded in
-  two bytes).
-
-  ## Examples
-
-      iex> atom_to_binary(:elixir, :utf8)
-      "elixir"
-
-  """
-  @spec atom_to_binary(atom, :utf8 | :unicode | :latin1) :: binary
+  @doc false
   def atom_to_binary(atom, encoding) do
+    IO.write "atom_to_binary/2 is deprecated, please use :erlang.atom_to_binary/2 instead\n#{Exception.format_stacktrace}"
     :erlang.atom_to_binary(atom, encoding)
   end
 
@@ -452,28 +440,15 @@ defmodule Kernel do
     :erlang.binary_part(binary, start, length)
   end
 
-  @doc """
-  Returns the atom whose text representation is `binary`. If `encoding` is latin1,
-  no translation of bytes in the binary is done. If `encoding` is utf8 or unicode,
-  the binary must contain valid UTF-8 sequences; furthermore, only Unicode
-  characters up to 0xFF are allowed.
-
-  ## Examples
-
-      iex> binary_to_atom("elixir", :utf8)
-      :elixir
-
-  """
-  @spec binary_to_atom(binary, :utf8 | :unicode | :latin1) :: atom
+  @doc false
   def binary_to_atom(binary, encoding) do
+    IO.write "binary_to_atom/2 is deprecated, please use :erlang.binary_to_atom/2 instead\n#{Exception.format_stacktrace}"
     :erlang.binary_to_atom(binary, encoding)
   end
 
-  @doc """
-  Works like `binary_to_atom/2`, but the atom must already exist.
-  """
-  @spec binary_to_existing_atom(binary, :utf8 | :unicode | :latin1) :: atom
+  @doc false
   def binary_to_existing_atom(binary, encoding) do
+    IO.write "binary_to_existing_atom/2 is deprecated, please use :erlang.binary_to_existing_atom/2 instead\n#{Exception.format_stacktrace}"
     :erlang.binary_to_existing_atom(binary, encoding)
   end
 
@@ -650,7 +625,7 @@ defmodule Kernel do
   @doc """
   Returns a binary which is made from the integers and binaries in iolist.
 
-  Notice that this function treats lists of integers as raw bytes 
+  Notice that this function treats lists of integers as raw bytes
   and does not perform any kind of encoding conversion. If you want to convert
   from a char list to a string (both utf-8 encoded), please use
   `String.from_char_list!/1` instead.
@@ -923,22 +898,9 @@ defmodule Kernel do
     :erlang.list_to_integer(list, base)
   end
 
-  @doc """
-  Returns a pid whose text representation is `list`.
-
-  ## Warning:
-
-  This function is intended for debugging and for use in the Erlang
-  operating system.
-
-  It should not be used in application programs.
-
-  ## Examples
-
-      list_to_pid('<0.4.1>') #=> #PID<0.4.1>
-  """
-  @spec list_to_pid(list) :: pid
+  @doc false
   def list_to_pid(list) do
+    IO.write "list_to_pid/1 is deprecated, please use :erlang.list_to_pid/1 instead\n#{Exception.format_stacktrace}"
     :erlang.list_to_pid(list)
   end
 
@@ -1026,20 +988,9 @@ defmodule Kernel do
     :erlang.node(arg)
   end
 
-  @doc """
-  Returns a char list which corresponds to the text representation of pid.
-  This function is intended for debugging and for use in the Erlang operating
-  system. It should not be used in application programs.
-
-  ## Warning:
-
-  This function is intended for debugging and for use in the Erlang
-  operating system.
-
-  It should not be used in application programs.
-  """
-  @spec pid_to_list(pid) :: list
+  @doc false
   def pid_to_list(pid) do
+    IO.write "pid_to_list/1 is deprecated, please use :erlang.pid_to_list/1 instead\n#{Exception.format_stacktrace}"
     :erlang.pid_to_list(pid)
   end
 
@@ -1249,23 +1200,27 @@ defmodule Kernel do
         end
       end
 
-  In the example above, two modules `Foo` and `Foo.Bar` are created. The
-  second can be accessed as `Bar` inside `Foo` in the same
-  lexical scope. If the module `Bar` is moved to another
-  file, it needs to be referenced via the full name or an
-  alias need to be set with the help of `Kernel.SpecialForms.alias/2`.
+  In the example above, two modules `Foo` and `Foo.Bar` are created.
+  When nesting, Elixir automatically creates an alias, allowing the
+  second module `Foo.Bar` to be accessed as `Bar` in the same lexical
+  scope.
+
+  This means that, if the module `Bar` is moved to another file,
+  the references to `Bar` needs to be updated or an alias needs to
+  be explicitly set with the help of `Kernel.SpecialForms.alias/2`.
 
   ## Dynamic names
 
   Elixir module names can be dynamically generated. This is very
   useful for macros. For instance, one could write:
 
-      defmodule binary_to_atom("Foo\#{1}", :utf8) do
+      defmodule binary_to_atom("Foo\#{1}") do
         # contents ...
       end
 
   Elixir will accept any module name as long as the expression
-  returns an atom.
+  returns an atom. Note that, when a dynamic name is used, an
+  alias is not automatically created, even when nested.
   """
   defmacro defmodule(name, do: contents)
 
@@ -1375,7 +1330,7 @@ defmodule Kernel do
       user = User[]
       #=> User[name: nil, age: 0]
 
-      User[user, name: "José", age: 25]
+      User[name: "José", age: 25]
       #=> User[name: "José", age: 25]
 
   And also a set of functions for working with the record
@@ -1550,8 +1505,8 @@ defmodule Kernel do
   @doc """
   Defines an exception.
 
-  Exceptions are simply records and therefore `defexception/4` has
-  the same API and similar behavior to `defrecord/4` with two notable
+  Exceptions are simply records and therefore `defexception/3` has
+  the same API and similar behavior to `defrecord/3` with two notable
   differences:
 
   1) Unlike records, exceptions are documented by default;
@@ -1560,9 +1515,14 @@ defmodule Kernel do
      string;
 
   """
-  defmacro defexception(name, fields, opts // [], do_block // []) do
-    opts = Keyword.merge(opts, do_block)
-    opts = Keyword.put(opts, :do, quote do
+  defmacro defexception(name, fields, do_block // []) do
+    { fields, do_block } =
+      case is_list(fields) and Keyword.get(fields, :do, false) do
+        false -> { fields, do_block }
+        other -> { Keyword.delete(fields, :do), [do: other] }
+      end
+
+    do_block = Keyword.put(do_block, :do, quote do
       @moduledoc nil
       record_type message: binary
 
@@ -1572,17 +1532,17 @@ defmodule Kernel do
       @doc false
       def exception(args, self), do: update(args, self)
 
-      unquote(Keyword.get opts, :do)
+      unquote(Keyword.get do_block, :do)
     end)
 
-    fields = [{ :__exception__, :__exception__ }|fields]
-    record = Record.defrecord(name, fields, opts)
+    fields = quote do: [__exception__: :__exception__] ++ unquote(fields)
+    record = Record.defrecord(name, fields, do_block)
 
     quote do
-      unquote(record)
+      { :module, name, _, _ } = unquote(record)
 
-      unless :erlang.function_exported(unquote(name), :message, 1) do
-        raise "expected exception #{inspect unquote(name)} to implement message/1"
+      unless :erlang.function_exported(name, :message, 1) do
+        raise "expected exception #{inspect name} to implement message/1"
       end
     end
   end
@@ -1625,42 +1585,16 @@ defmodule Kernel do
     quote do: :erlang.setelement(unquote(index) + 1, unquote(tuple), unquote(value))
   end
 
-  @doc """
-  Inserts `value` into `tuple` at the given zero-based `index`.
-
-  ## Example
-
-      iex> tuple = { :bar, :baz }
-      ...> insert_elem(tuple, 0, :foo)
-      { :foo, :bar, :baz }
-  """
-  defmacro insert_elem(tuple, index, value) when is_integer(index) do
-    quote do: :erlang.insert_element(unquote(index + 1), unquote(tuple), unquote(value))
+  @doc false
+  def insert_elem(tuple, index, value) do
+    IO.write "insert_elem/3 is deprecated, please use Tuple.insert_at/3 instead\n#{Exception.format_stacktrace}"
+    :erlang.insert_element(index + 1, tuple, value)
   end
 
-  defmacro insert_elem(tuple, index, value) do
-    quote do: :erlang.insert_element(unquote(index) + 1, unquote(tuple), unquote(value))
-  end
-
-  @doc """
-  Deletes the element at the zero-based `index` from `tuple`.
-
-  Please note that in versions of Erlang prior to R16B there is no BIF
-  for this operation and it is emulated by converting the tuple to a list
-  and back and is, therefore, inefficient.
-
-  ## Example
-
-      iex> tuple = { :foo, :bar, :baz }
-      ...> delete_elem(tuple, 0)
-      { :bar, :baz }
-  """
-  defmacro delete_elem(tuple, index) when is_integer(index) do
-    quote do: :erlang.delete_element(unquote(index + 1), unquote(tuple))
-  end
-
-  defmacro delete_elem(tuple, index) do
-    quote do: :erlang.delete_element(unquote(index) + 1, unquote(tuple))
+  @doc false
+  def delete_elem(tuple, index) do
+    IO.write "delete_elem/2 is deprecated, please use Tuple.delete_at/2 instead\n#{Exception.format_stacktrace}"
+    :erlang.delete_element(index + 1, tuple)
   end
 
   @doc """
@@ -1786,8 +1720,8 @@ defmodule Kernel do
   end
 
   @doc """
-  Defines the current module as a protocol and specifies the API
-  that should be implemented.
+  Defines a module as a protocol and specifies the API that
+  should be defined by its implementations.
 
   ## Examples
 
@@ -1808,8 +1742,8 @@ defmodule Kernel do
   Now that the protocol is defined, we can implement it. We need
   to implement the protocol for each Elixir type. For example:
 
-      # Numbers are never blank
-      defimpl Blank, for: Number do
+      # Integers are never blank
+      defimpl Blank, for: Integer do
         def blank?(number), do: false
       end
 
@@ -1827,68 +1761,64 @@ defmodule Kernel do
       end
 
   And we would have to define the implementation for all types.
-  The types available are:
+  The supported types available are:
 
-  * Record
+  * Record (see below)
   * Tuple
   * Atom
   * List
   * BitString
-  * Number
+  * Integer
+  * Float
   * Function
   * PID
   * Port
   * Reference
-  * Any
-
-  ## Selecting implementations
-
-  Implementing the protocol for all default types can be cumbersome.
-  Even more, if you consider that Number, Function, PID, Port and
-  Reference are never going to be blank, it would be easier if we
-  could simply provide a default implementation.
-
-  This can be achieved in Elixir as follows:
-
-      defprotocol Blank do
-        @only [Atom, Tuple, List, BitString, Any]
-        def blank?(data)
-      end
-
-  If the protocol is invoked with a data type that is not an Atom,
-  a Tuple, a List, or a BitString, Elixir will now dispatch to
-  Any. That said, the default behavior could be implemented as:
-
-      defimpl Blank, for: Any do
-        def blank?(_), do: false
-      end
-
-  Now, all data types that we have not specified will be
-  automatically considered non blank.
+  * Any (see below)
 
   ## Protocols + Records
 
   The real benefit of protocols comes when mixed with records.
-  For instance, imagine we have a module called `RedBlack` that
-  provides an API to create and manipulate Red-Black trees. This
-  module represents such trees via a record named `RedBlack.Tree`
-  and we want this tree to be considered blank in case it has no
-  items. To achieve this, the developer just needs to implement
-  the protocol for `RedBlack.Tree`:
+  For instance, Elixir ships with many data types implemented as
+  records, like `HashDict` and `HashSet`. We can implement the
+  `Blank` protocol for those types as well:
 
-      defimpl Blank, for: RedBlack.Tree do
-        def blank?(tree), do: RedBlack.empty?(tree)
+      defimpl Blank, for: HashDict do
+        def blank?(dict), do: Dict.empty?(dict)
       end
 
-  In the example above, we have implemented `blank?` for
-  `RedBlack.Tree` that simply delegates to `RedBlack.empty?` passing
-  the tree as argument. This implementation doesn't need to be defined
-  inside the `RedBlack` tree or inside the record; it can be defined
-  anywhere in the code.
+  Since records are tuples, if a protocol is not found a given
+  type, it will fallback to `Tuple`.
 
-  Finally, since records are simply tuples, one can add a default
-  protocol implementation to any record by defining a default
-  implementation for tuples.
+  ## Fallback to any
+
+  In some cases, it may be convenient to provide a default
+  implementation for all types. This can be achieved by
+  setting `@fallback_to_any` to `true` in the protocol
+  definition:
+
+      defprotocol Blank do
+        @fallback_to_any true
+        def blank?(data)
+      end
+
+  Which can now be implemented as:
+
+      defimpl Blank, for: Any do
+        def blank?(_), do: true
+      end
+
+  One may wonder why such fallback is not true by default.
+
+  It is two-fold: first, the majority of protocols cannot
+  implement an action in a generic way for all types. In fact,
+  providing a default implementation may be harmful, because users
+  may rely on the default implementation instead of providing a
+  specialized one.
+
+  Second, falling back to `Any` adds an extra lookup to all types,
+  which is unecessary overhead unless an implementation for Any is
+  required.
 
   ## Types
 
@@ -1902,6 +1832,35 @@ defmodule Kernel do
 
   The `@spec` above expresses that all types allowed to implement the
   given protocol are valid argument types for the given function.
+
+  ## Reflection
+
+  Any protocol module contains three extra functions:
+
+
+  * `__protocol__/1` - returns the protocol name when :name is given,
+                       and a keyword list with the protocol functions
+                       when :functions is given;
+
+  * `impl_for/1` - receives a structure and returns the module that implements
+                   the protocol for the structure, nil otherwise;
+
+  * `impl_for!/1` - same as above but raises an error if an implementation is not found
+
+  ## Consolidation
+
+  In order to cope with code loading in development, protocols in
+  Elixir provide a slow implementation of protocol dispatching in
+  development.
+
+  In order to speed up dispatching in production environments, where
+  all implementations are now up-front, Elixir provides a feature
+  called protocol consolidation. For this reason, all protocols are
+  compiled with `debug_info` set to true, regardless of the option
+  set by `elixirc` compiler.
+
+  For more information on how to apply protocol consolidation to
+  a given project, please check the `mix compile.protocols` task.
   """
   defmacro defprotocol(name, do: block) do
     Protocol.defprotocol(name, do: block)
@@ -1911,8 +1870,8 @@ defmodule Kernel do
   Defines an implementation for the given protocol. See
   `defprotocol/2` for examples.
 
-  It makes available the name of the protocol and of the module it's being
-  implemented for inside the @protocol attribute as a two-tuple.
+  Inside an implementation, the name of the protocol can be accessed
+  via `@protocol` and the current target as `@for`.
   """
   defmacro defimpl(name, opts, do_block // []) do
     merged = Keyword.merge(opts, do_block)
@@ -2185,7 +2144,7 @@ defmodule Kernel do
   end
 
   defmacro match?(left, right) do
-    { left, _ } = falsify_var(left, [], &falsify_all/2)
+    { left, _ } = kernelfy_var(left, [], &kernelfy_all/2)
 
     quote do
       case unquote(right) do
@@ -2197,48 +2156,48 @@ defmodule Kernel do
     end
   end
 
-  defp falsify_all({ var, meta, scope }, acc) when is_atom(var) and is_atom(scope) do
-    { { var, meta, false }, [{ var, scope }|acc] }
+  defp kernelfy_all({ var, meta, scope }, acc) when is_atom(var) and is_atom(scope) do
+    { { var, meta, Kernel }, [{ var, scope }|acc] }
   end
 
-  defp falsify_selected({ var, meta, scope } = original, acc) when is_atom(var) and is_atom(scope) do
+  defp kernelfy_selected({ var, meta, scope } = original, acc) when is_atom(var) and is_atom(scope) do
     case :lists.member({ var, scope }, acc) do
-      true  -> { { var, meta, false }, acc }
+      true  -> { { var, meta, Kernel }, acc }
       false -> { original, acc }
     end
   end
 
-  defp falsify_var({ :^, _, [_] } = contents, acc, _fun) do
+  defp kernelfy_var({ :^, _, [_] } = contents, acc, _fun) do
     { contents, acc }
   end
 
-  defp falsify_var({ :when, meta, [left, right] }, acc, fun) do
-    { left, acc }  = falsify_var(left, acc, fun)
-    { right, acc } = falsify_var(right, acc, &falsify_selected/2)
+  defp kernelfy_var({ :when, meta, [left, right] }, acc, fun) do
+    { left, acc }  = kernelfy_var(left, acc, fun)
+    { right, acc } = kernelfy_var(right, acc, &kernelfy_selected/2)
     { { :when, meta, [left, right] }, acc }
   end
 
-  defp falsify_var({ var, _, scope } = original, acc, fun) when is_atom(var) and is_atom(scope) do
+  defp kernelfy_var({ var, _, scope } = original, acc, fun) when is_atom(var) and is_atom(scope) do
     fun.(original, acc)
   end
 
-  defp falsify_var({ left, meta, right }, acc, fun) do
-    { left, acc }  = falsify_var(left, acc, fun)
-    { right, acc } = falsify_var(right, acc, fun)
+  defp kernelfy_var({ left, meta, right }, acc, fun) do
+    { left, acc }  = kernelfy_var(left, acc, fun)
+    { right, acc } = kernelfy_var(right, acc, fun)
     { { left, meta, right }, acc }
   end
 
-  defp falsify_var({ left, right }, acc, fun) do
-    { left, acc }  = falsify_var(left, acc, fun)
-    { right, acc } = falsify_var(right, acc, fun)
+  defp kernelfy_var({ left, right }, acc, fun) do
+    { left, acc }  = kernelfy_var(left, acc, fun)
+    { right, acc } = kernelfy_var(right, acc, fun)
     { { left, right }, acc }
   end
 
-  defp falsify_var(list, acc, fun) when is_list(list) do
-    :lists.mapfoldl(&falsify_var(&1, &2, fun), acc, list)
+  defp kernelfy_var(list, acc, fun) when is_list(list) do
+    :lists.mapfoldl(&kernelfy_var(&1, &2, fun), acc, list)
   end
 
-  defp falsify_var(other, acc, _fun) do
+  defp kernelfy_var(other, acc, _fun) do
     { other, acc }
   end
 
@@ -2293,13 +2252,17 @@ defmodule Kernel do
       catch
         value ->
           IO.puts "caught \#{value}"
+      else
+        value ->
+          IO.puts "Success! The result was \#{value}"
       after
         IO.puts "This is printed regardless if it failed or succeed"
       end
 
   The rescue clause is used to handle exceptions, while the catch
-  clause can be used to catch thrown values. Both catch and rescue
-  clauses work based on pattern matching.
+  clause can be used to catch thrown values. The else clause can
+  be used to control flow based on the result of the expression.
+  Catch, rescue and else clauses work based on pattern matching.
 
   Note that calls inside `try` are not tail recursive since the VM
   needs to keep the stacktrace in case an exception happens.
@@ -2357,6 +2320,83 @@ defmodule Kernel do
 
   Although the second form should be avoided in favor of raise/rescue
   control mechanisms.
+
+  ## Else clauses
+
+  Else clauses allow the result of the expression to be pattern
+  matched on:
+
+      x = 2
+      try do
+        1 / x
+      rescue
+        ArithmeticError ->
+          :infinity
+      else
+        y when y < 1 and y > -1 ->
+          :small
+        _ ->
+          :large
+      end
+
+  If an else clause is not present the result of the expression will
+  be return, if no exceptions are raised:
+
+      x = 1
+      ^x =
+        try do
+          1 / x
+        rescue
+          ArithmeticError ->
+            :infinity
+        end
+
+  However when an else clause is present but the result of the expression
+  does not match any of the patterns an exception will be raised. This
+  exception will not be caught by a catch or rescue in the same try:
+
+      x = 1
+      try do
+        try do
+          1 / x
+        rescue
+          # The TryClauseError can not be rescued here:
+          TryClauseError ->
+            :error_a
+        else
+          0 ->
+            :small
+        end
+      rescue
+        # The TryClauseError is rescued here:
+        TryClauseError ->
+          :error_b
+      end
+
+  Similarly an exception inside an else clause is not caught or rescued
+  inside the same try:
+
+      try do
+        try do
+          nil
+        catch
+          # The exit(1) call below can not be caught here:
+          :exit, _ ->
+            :exit_a
+        else
+          _ ->
+            exit(1)
+        end
+      catch
+        # The exit is caught here:
+        :exit, _ ->
+          :exit_b
+      end
+
+  This means the VM nolonger needs to keep the stacktrace once inside
+  an else clause and so tail recursion is possible when using a `try`
+  with a tail call as the final call inside an else clause. The same
+  is true for rescue and catch clauses.
 
   ## Variable visibility
 
@@ -2601,8 +2641,8 @@ defmodule Kernel do
 
     quote do
       case unquote(condition) do
-        _ in [false, nil] -> unquote(else_clause)
-        _                 -> unquote(do_clause)
+        unquote(cond_var) when unquote(cond_var) in [false, nil] -> unquote(else_clause)
+        _ -> unquote(do_clause)
       end
     end
   end
@@ -2831,8 +2871,11 @@ defmodule Kernel do
   end
 
   @doc """
-  Returns the atom whose text representation is
-  `some_binary` in UTF8 encoding.
+  Returns the atom whose text representation is `some_binary` in
+  UTF8 encoding.
+
+  Currently Elixir does not support conversions for binaries which
+  contains Unicode characters greater than 16#FF.
 
   ## Examples
 
@@ -2842,12 +2885,15 @@ defmodule Kernel do
   """
   defmacro binary_to_atom(some_binary) do
     quote do
-      binary_to_atom(unquote(some_binary), :utf8)
+      :erlang.binary_to_atom(unquote(some_binary), :utf8)
     end
   end
 
   @doc """
-  Works like `binary_to_atom` but the atom must exist.
+  Works like `binary_to_atom/1` but the atom must exist.
+
+  Currently Elixir does not support conversions for binaries which
+  contains Unicode characters greater than 16#FF.
 
   ## Examples
 
@@ -2861,7 +2907,7 @@ defmodule Kernel do
   """
   defmacro binary_to_existing_atom(some_binary) do
     quote do
-      binary_to_existing_atom(unquote(some_binary), :utf8)
+      :erlang.binary_to_existing_atom(unquote(some_binary), :utf8)
     end
   end
 
@@ -2877,7 +2923,7 @@ defmodule Kernel do
   """
   defmacro atom_to_binary(some_atom) do
     quote do
-      atom_to_binary(unquote(some_atom), :utf8)
+      :erlang.atom_to_binary(unquote(some_atom), :utf8)
     end
   end
 
@@ -2946,8 +2992,8 @@ defmodule Kernel do
   defmacro left && right do
     quote do
       case unquote(left) do
-        var!(andand, false) in [false, nil] ->
-          var!(andand, false)
+        unquote(temp_var) when unquote(temp_var) in [false, nil] ->
+          unquote(temp_var)
         _ ->
           unquote(right)
       end
@@ -2977,10 +3023,10 @@ defmodule Kernel do
   defmacro left || right do
     quote do
       case unquote(left) do
-        var!(oror, false) in [false, nil] ->
+        unquote(temp_var) when unquote(temp_var) in [false, nil] ->
           unquote(right)
-        var!(oror, false) ->
-          var!(oror, false)
+        unquote(temp_var) ->
+          unquote(temp_var)
       end
     end
   end
@@ -3056,23 +3102,7 @@ defmodule Kernel do
 
   """
   defmacro left |> right do
-    pipeline_op(left, right)
-  end
-
-  defp pipeline_op(left, { :|>, _, [middle, right] }) do
-    pipeline_op(pipeline_op(left, middle), right)
-  end
-
-  defp pipeline_op(left, { call, line, atom }) when is_atom(atom) do
-    { call, line, [left] }
-  end
-
-  defp pipeline_op(left, { call, line, args }) when is_list(args) do
-    { call, line, [left|args] }
-  end
-
-  defp pipeline_op(_, arg) do
-    :erlang.error ArgumentError.exception(message: "unsupported expression in pipeline |> operator: #{Macro.to_string arg}")
+    :lists.foldl fn x, acc -> Macro.pipe(acc, x) end, left, Macro.unpipe(right)
   end
 
   @doc """
@@ -3103,6 +3133,12 @@ defmodule Kernel do
     end
   end
 
+  defmacro raise({ tag, _, _ } = exception) when tag == :<<>> or tag == :<> do
+    quote do
+      :erlang.error RuntimeError.new(message: unquote(exception))
+    end
+  end
+
   @doc """
   Raises an error.
 
@@ -3121,7 +3157,27 @@ defmodule Kernel do
 
   """
   @spec raise(tuple | atom, list) :: no_return
-  defmacro raise(exception, args // []) do
+  defmacro raise(exception, args // [])
+
+  defmacro raise({ :{}, _, _ } = exception, args) do
+    quote do
+      :erlang.error unquote(exception).exception(unquote(args))
+    end
+  end
+
+  defmacro raise({ :__aliases__, _, _ } = exception, args) do
+    quote do
+      :erlang.error unquote(exception).exception(unquote(args))
+    end
+  end
+
+  defmacro raise(exception, args) when is_atom(exception) do
+    quote do
+      :erlang.error unquote(exception).exception(unquote(args))
+    end
+  end
+
+  defmacro raise(exception, args) do
     quote do
       exception = unquote(exception)
       case exception do
@@ -3250,7 +3306,7 @@ defmodule Kernel do
 
   In this case, `"Hello"` will be printed twice (one per each field).
   """
-  defmacro access(element, args) do
+  defmacro access(element, args) when is_list(args) do
     caller = __CALLER__
     atom   = Macro.expand(element, caller)
 
@@ -3277,10 +3333,14 @@ defmodule Kernel do
 
         Record.access(atom, fields, args, caller)
       false ->
-        case caller.in_match? do
-          true  -> :erlang.error ArgumentError.exception(message: << "the access protocol cannot be used inside match clauses ",
-                     "(for example, on the left hand side of a match or in function signatures)" >>)
-          false -> quote do: Access.access(unquote(element), unquote(args))
+        case caller.in_match? or caller.in_guard? do
+          true  -> :erlang.error ArgumentError.exception(message: "dynamic access cannot be invoked inside match and guard clauses")
+          false -> :ok
+        end
+
+        case args do
+          [h] -> quote do: Access.access(unquote(element), unquote(h))
+          _   -> :erlang.error ArgumentError.exception(message: "expected at least one argument in access")
         end
     end
   end
@@ -3564,11 +3624,24 @@ defmodule Kernel do
   defp expand_compact([]),                      do: []
 
   defp falsy_clause(meta, acc) do
-    { [quote(do: _ in [false, nil])], meta, acc }
+    { [quote(do: unquote(cond_var) when unquote(cond_var) in [false, nil])], meta, acc }
   end
 
   defp truthy_clause(meta, clause) do
     { [quote(do: _)], meta, clause }
+  end
+
+  # Setting cond: true in metadata turns on a small optimization
+  # in Elixir compiler. In the long run, we want to bring this
+  # optimization to Elixir land, but not right now.
+  defp cond_var do
+    { :x, [cond: true, temp: true], Kernel }
+  end
+
+  # A temporary var only lasts its current clause, never leak
+  # into other clauses.
+  defp temp_var do
+    { :x, [temp: true], Kernel }
   end
 
   defp get_line(meta) do

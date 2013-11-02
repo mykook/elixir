@@ -17,6 +17,23 @@ defmodule Mix.Tasks.Compile.ElixirTest do
     end
   end
 
+  test "does not write beam down on failures" do
+    import ExUnit.CaptureIO
+
+    in_fixture "only_mixfile", fn ->
+      File.mkdir_p!("lib")
+      File.write!("lib/a.ex", "raise %s(oops)")
+
+      capture_io fn ->
+        assert_raise RuntimeError, fn ->
+          Mix.Tasks.Compile.Elixir.run []
+        end
+      end
+
+      refute File.regular?("ebin/Elixir.A.beam")
+    end
+  end
+
   test "removes old artifact files" do
     in_fixture "no_mixfile", fn ->
       assert Mix.Tasks.Compile.Elixir.run([]) == :ok
@@ -66,6 +83,9 @@ defmodule Mix.Tasks.Compile.ElixirTest do
   test "compiles only changed files" do
     in_fixture "no_mixfile", fn ->
       assert Mix.Tasks.Compile.Elixir.run([]) == :ok
+      assert_received { :mix_shell, :info, ["Compiled lib/a.ex"] }
+      assert_received { :mix_shell, :info, ["Compiled lib/b.ex"] }
+
       Mix.shell.flush
       purge [A, B, C]
 
@@ -78,6 +98,46 @@ defmodule Mix.Tasks.Compile.ElixirTest do
 
       File.touch!("ebin/.compile.elixir", future)
       assert Mix.Tasks.Compile.Elixir.run([]) == :noop
+    end
+  end
+
+  test "compiles dependent changed files" do
+    in_fixture "no_mixfile", fn ->
+      File.write!("lib/a.ex", "defmodule A, do: B.module_info")
+
+      assert Mix.Tasks.Compile.Elixir.run([]) == :ok
+      assert_received { :mix_shell, :info, ["Compiled lib/a.ex"] }
+      assert_received { :mix_shell, :info, ["Compiled lib/b.ex"] }
+
+      Mix.shell.flush
+      purge [A, B, C]
+
+      future = { { 2020, 1, 1 }, { 0, 0, 0 } }
+      File.touch!("lib/b.ex", future)
+      Mix.Tasks.Compile.Elixir.run []
+
+      assert_received { :mix_shell, :info, ["Compiled lib/a.ex"] }
+      assert_received { :mix_shell, :info, ["Compiled lib/b.ex"] }
+    end
+  end
+
+  test "compiles dependent changed files even on removal" do
+    in_fixture "no_mixfile", fn ->
+      File.write!("lib/a.ex", "defmodule A, do: B.module_info")
+
+      assert Mix.Tasks.Compile.Elixir.run([]) == :ok
+      assert_received { :mix_shell, :info, ["Compiled lib/a.ex"] }
+      assert_received { :mix_shell, :info, ["Compiled lib/b.ex"] }
+
+      Mix.shell.flush
+      purge [A, B, C]
+
+      File.rm("lib/b.ex")
+      File.write!("lib/a.ex", "defmodule A, do: nil")
+      Mix.Tasks.Compile.Elixir.run []
+
+      assert_received { :mix_shell, :info, ["Compiled lib/a.ex"] }
+      refute_received { :mix_shell, :info, ["Compiled lib/b.ex"] }
     end
   end
 

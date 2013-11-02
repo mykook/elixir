@@ -12,17 +12,15 @@
 -include("elixir.hrl").
 
 forms(String, StartLine, File, Opts) ->
-  try elixir_tokenizer:tokenize(String, StartLine, [{ file, File }|Opts]) of
-    { ok, Tokens } ->
+  case elixir_tokenizer:tokenize(String, StartLine, [{ file, File }|Opts]) of
+    { ok, _Line, Tokens } ->
       try elixir_parser:parse(Tokens) of
         { ok, Forms } -> { ok, Forms };
         { error, { Line, _, [Error, Token] } } -> { error, { Line, Error, Token } }
       catch
         { error, { Line, _, [Error, Token] } } -> { error, { Line, Error, Token } }
       end;
-    { error, { _, _, _ } } = Else -> Else
-  catch
-    { interpolation_error, { _, _, _ } = Tuple} -> { error, Tuple }
+    { error, Reason, _Rest, _SoFar  } -> { error, Reason }
   end.
 
 'forms!'(String, StartLine, File, Opts) ->
@@ -36,10 +34,6 @@ forms(String, StartLine, File, Opts) ->
 translate(Forms, S) ->
   lists:mapfoldl(fun translate_each/2, S, Forms).
 
-%% Those macros are "low-level". They are the basic mechanism
-%% that makes the language work and cannot be partially applied
-%% nor overwritten.
-
 %% Assignment operator
 
 translate_each({ '=', Meta, [Left, Right] }, S) ->
@@ -50,7 +44,7 @@ translate_each({ '=', Meta, [Left, Right] }, S) ->
 
 %% Containers
 
-translate_each({ C, _, _ } = Original, S) when C == '[]'; C == '{}'; C == '<<>>' ->
+translate_each({ C, _, _ } = Original, S) when C == '{}'; C == '<<>>' ->
   elixir_literal:translate(Original, S);
 
 %% Blocks and scope rewriters
@@ -89,7 +83,7 @@ translate_each({ alias, Meta, [Ref] }, S) ->
 translate_each({ alias, Meta, [Ref, KV] }, S) ->
   assert_no_match_or_guard_scope(Meta, alias, S),
   { TRef, SR } = translate_each(Ref, S),
-  { TKV, ST }  = translate_opts(Meta, alias, [as], no_alias_opts(KV), SR),
+  { TKV, ST }  = translate_opts(Meta, alias, [as, warn], no_alias_opts(KV), SR),
 
   case TRef of
     { atom, _, Old } ->
@@ -105,7 +99,7 @@ translate_each({ require, Meta, [Ref, KV] }, S) ->
   assert_no_match_or_guard_scope(Meta, require, S),
 
   { TRef, SR } = translate_each(Ref, S),
-  { TKV, ST }  = translate_opts(Meta, require, [as], no_alias_opts(KV), SR),
+  { TKV, ST }  = translate_opts(Meta, require, [as, warn], no_alias_opts(KV), SR),
 
   case TRef of
     { atom, _, Old } ->
@@ -145,7 +139,7 @@ translate_each({ '__DIR__', _Meta, Atom }, S) when is_atom(Atom) ->
 
 translate_each({ '__ENV__', Meta, Atom }, S) when is_atom(Atom) ->
   Env = elixir_scope:to_ex_env({ ?line(Meta), S }),
-  { elixir_utils:elixir_to_erl(Env), S };
+  { elixir_scope:to_erl(Env), S };
 
 translate_each({ '__CALLER__', Meta, Atom }, S) when is_atom(Atom) ->
   { { var, ?line(Meta), '__CALLER__' }, S#elixir_scope{caller=true} };
@@ -153,9 +147,9 @@ translate_each({ '__CALLER__', Meta, Atom }, S) when is_atom(Atom) ->
 %% Aliases
 
 translate_each({ '__aliases__', Meta, _ } = Alias, S) ->
-  case elixir_aliases:expand(Alias, S#elixir_scope.aliases, S#elixir_scope.macro_aliases) of
+  case elixir_aliases:expand(Alias, S#elixir_scope.aliases, S#elixir_scope.macro_aliases, S#elixir_scope.lexical_tracker) of
     Receiver when is_atom(Receiver) ->
-      elixir_tracker:record_alias(Receiver, S#elixir_scope.module),
+      elixir_lexical:record_remote(Receiver, S#elixir_scope.lexical_tracker),
       { { atom, ?line(Meta), Receiver }, S };
     Aliases ->
       { TAliases, SA } = translate_args(Aliases, S),
@@ -164,7 +158,7 @@ translate_each({ '__aliases__', Meta, _ } = Alias, S) ->
         true ->
           Atoms = [Atom || { atom, _, Atom } <- TAliases],
           Receiver = elixir_aliases:concat(Atoms),
-          elixir_tracker:record_alias(Receiver, S#elixir_scope.module),
+          elixir_lexical:record_remote(Receiver, S#elixir_scope.lexical_tracker),
           { { atom, ?line(Meta), Receiver }, SA };
         false ->
           Args = [elixir_utils:list_to_cons(?line(Meta), TAliases)],
@@ -287,7 +281,7 @@ translate_each({ '&', Meta, [Arg] }, S) ->
   assert_no_match_or_guard_scope(Meta, '&', S),
   elixir_fn:capture(Meta, Arg, S);
 
-translate_each({ fn, Meta, [[{do, { '->', _, Pairs }}]] }, S) ->
+translate_each({ fn, Meta, [{ '->', _, Pairs }] }, S) ->
   assert_no_match_or_guard_scope(Meta, 'fn', S),
   elixir_fn:fn(Meta, Pairs, S);
 
@@ -296,30 +290,26 @@ translate_each({ fn, Meta, [[{do, { '->', _, Pairs }}]] }, S) ->
 translate_each({ Kind, Meta, Args }, S) when is_list(Args), (Kind == lc) orelse (Kind == bc) ->
   translate_comprehension(Meta, Kind, Args, S);
 
-%% Super (exceptionally supports partial application)
+%% Super
 
-translate_each({ super, Meta, Args } = Original, S) when is_list(Args) ->
-  case elixir_partials:handle(Original, S) of
-    error ->
-      assert_no_match_or_guard_scope(Meta, super, S),
-      Module = assert_module_scope(Meta, super, S),
-      Function = assert_function_scope(Meta, super, S),
-      elixir_def_overridable:ensure_defined(Meta, Module, Function, S),
+translate_each({ super, Meta, Args }, S) when is_list(Args) ->
+  assert_no_match_or_guard_scope(Meta, super, S),
+  Module = assert_module_scope(Meta, super, S),
+  Function = assert_function_scope(Meta, super, S),
+  elixir_def_overridable:ensure_defined(Meta, Module, Function, S),
 
-      { _, Arity } = Function,
+  { _, Arity } = Function,
 
-      { TArgs, TS } = if
-        length(Args) == Arity ->
-          translate_args(Args, S);
-        true ->
-          syntax_error(Meta, S#elixir_scope.file, "super must be called with the same number of "
-                       "arguments as the current function")
-      end,
+  { TArgs, TS } = if
+    length(Args) == Arity ->
+      translate_args(Args, S);
+    true ->
+      syntax_error(Meta, S#elixir_scope.file, "super must be called with the same number of "
+                   "arguments as the current function")
+  end,
 
-      Super = elixir_def_overridable:name(Module, Function),
-      { { call, ?line(Meta), { atom, ?line(Meta), Super }, TArgs }, TS#elixir_scope{super=true} };
-    Else -> Else
-  end;
+  Super = elixir_def_overridable:name(Module, Function),
+  { { call, ?line(Meta), { atom, ?line(Meta), Super }, TArgs }, TS#elixir_scope{super=true} };
 
 translate_each({ 'super?', Meta, [] }, S) ->
   Module = assert_module_scope(Meta, 'super?', S),
@@ -329,9 +319,9 @@ translate_each({ 'super?', Meta, [] }, S) ->
 
 %% Variables
 
-translate_each({ '^', Meta, [ { Name, _, Kind } = Var ] },
+translate_each({ '^', Meta, [ { Name, VarMeta, Kind } = Var ] },
                #elixir_scope{extra=fn_match, extra_guards=Extra} = S) when is_atom(Name), is_atom(Kind) ->
-  case orddict:find({ Name, Kind }, S#elixir_scope.backup_vars) of
+  case orddict:find({ Name, var_kind(VarMeta, Kind) }, S#elixir_scope.backup_vars) of
     { ok, Value } ->
       Line = ?line(Meta),
       { TVar, TS } = translate_each(Var, S),
@@ -341,8 +331,8 @@ translate_each({ '^', Meta, [ { Name, _, Kind } = Var ] },
       compile_error(Meta, S#elixir_scope.file, "unbound variable ^~ts", [Name])
   end;
 
-translate_each({ '^', Meta, [ { Name, _, Kind } ] }, #elixir_scope{context=match} = S) when is_atom(Name), is_atom(Kind) ->
-  case orddict:find({ Name, Kind }, S#elixir_scope.backup_vars) of
+translate_each({ '^', Meta, [ { Name, VarMeta, Kind } ] }, #elixir_scope{context=match} = S) when is_atom(Name), is_atom(Kind) ->
+  case orddict:find({ Name, var_kind(VarMeta, Kind) }, S#elixir_scope.backup_vars) of
     { ok, Value } ->
       { { var, ?line(Meta), Value }, S };
     error ->
@@ -358,7 +348,7 @@ translate_each({ '^', Meta, [ Expr ] }, S) ->
     "the unary operator ^ can only be used with variables, invalid expression ^~ts", ['Elixir.Macro':to_string(Expr)]);
 
 translate_each({ Name, Meta, Kind }, S) when is_atom(Name), is_atom(Kind) ->
-  elixir_scope:translate_var(Meta, Name, Kind, S, fun() ->
+  elixir_scope:translate_var(Meta, Name, var_kind(Meta, Kind), S, fun() ->
     translate_each({ Name, Meta, [] }, S)
   end);
 
@@ -367,104 +357,81 @@ translate_each({ Name, Meta, Kind }, S) when is_atom(Name), is_atom(Kind) ->
 translate_each({ '->', Meta, _Args }, S) ->
   syntax_error(Meta, S#elixir_scope.file, "unhandled operator ->");
 
-translate_each({ Atom, Meta, Args } = Original, S) when is_atom(Atom) ->
+translate_each({ Atom, Meta, Args }, S) when is_atom(Atom), is_list(Meta), is_list(Args) ->
   assert_no_ambiguous_op(Atom, Meta, Args, S),
 
-  case elixir_partials:is_sequential(Args) andalso
-       elixir_dispatch:import_function(Meta, Atom, length(Args), S) of
-    false ->
-      case elixir_partials:handle(Original, S) of
-        error ->
-          Callback = fun() ->
-            case S#elixir_scope.context of
-              match ->
-                compile_error(Meta, S#elixir_scope.file,
-                              "cannot invoke function ~ts/~B inside match", [Atom, length(Args)]);
-              guard ->
-                Arity = length(Args),
-                File  = S#elixir_scope.file,
-                case Arity of
-                  0 -> compile_error(Meta, File, "unknown variable ~ts or cannot invoke "
-                                     "function ~ts/~B inside guard", [Atom, Atom, Arity]);
-                  _ -> compile_error(Meta, File, "cannot invoke local ~ts/~B inside guard",
-                                     [Atom, Arity])
-                end;
-              _ ->
-                translate_local(Meta, Atom, Args, S)
-            end
-          end,
+  Callback = fun() ->
+    case S#elixir_scope.context of
+      match ->
+        compile_error(Meta, S#elixir_scope.file,
+                      "cannot invoke function ~ts/~B inside match", [Atom, length(Args)]);
+      guard ->
+        Arity = length(Args),
+        File  = S#elixir_scope.file,
+        case Arity of
+          0 -> compile_error(Meta, File, "unknown variable ~ts or cannot invoke "
+                             "function ~ts/~B inside guard", [Atom, Atom, Arity]);
+          _ -> compile_error(Meta, File, "cannot invoke local ~ts/~B inside guard",
+                             [Atom, Arity])
+        end;
+      _ ->
+        translate_local(Meta, Atom, Args, S)
+    end
+  end,
 
-          elixir_dispatch:dispatch_import(Meta, Atom, Args, S, Callback);
-        Else  -> Else
-      end;
-    Else ->
-      elixir_errors:deprecation(Meta, S#elixir_scope.file, "partial application without capture is deprecated"),
-      Else
-  end;
+  elixir_dispatch:dispatch_import(Meta, Atom, Args, S, Callback);
 
 %% Remote calls
 
-translate_each({ { '.', _, [Left, Right] }, Meta, Args } = Original, S) when is_atom(Right) ->
+translate_each({ { '.', _, [Left, Right] }, Meta, Args }, S)
+    when (is_tuple(Left) orelse is_atom(Left)), is_atom(Right), is_list(Meta), is_list(Args) ->
   { TLeft,  SL } = translate_each(Left, S),
 
-  Fun = (element(1, TLeft) == atom) andalso elixir_partials:is_sequential(Args) andalso
-    elixir_dispatch:require_function(Meta, element(3, TLeft), Right, length(Args), SL),
+  { TRight, SR } = translate_each(Right, umergec(S, SL)),
+  Callback = fun() -> translate_apply(Meta, TLeft, TRight, Args, S, SL, SR) end,
 
-  case Fun of
-    false ->
-      case elixir_partials:handle(Original, S) of
-        error ->
-          { TRight, SR } = translate_each(Right, umergec(S, SL)),
-          Callback = fun() -> translate_apply(Meta, TLeft, TRight, Args, S, SL, SR) end,
-
-          case TLeft of
-            { atom, _, Receiver } ->
-              elixir_dispatch:dispatch_require(Meta, Receiver, Right, Args, umergev(SL, SR), fun() ->
-                case S#elixir_scope.context of
-                  Context when Receiver /= erlang, (Context == match) orelse (Context == guard) ->
-                    compile_error(Meta, S#elixir_scope.file, "cannot invoke remote function ~ts.~ts/~B inside ~ts",
-                      [elixir_errors:inspect(Receiver), Right, length(Args), Context]);
-                  _ ->
-                    Callback()
-                end
-              end);
-            _ ->
-              case S#elixir_scope.context of
-                Context when Context == match; Context == guard ->
-                  compile_error(Meta, S#elixir_scope.file, "cannot invoke remote function ~ts/~B inside ~ts",
-                    [Right, length(Args), Context]);
-                _ ->
-                  Callback()
-              end
-          end;
-        Else -> Else
-      end;
-    Else ->
-      elixir_errors:deprecation(Meta, S#elixir_scope.file, "partial application without capture is deprecated"),
-      Else
+  case TLeft of
+    { atom, _, Receiver } ->
+      elixir_dispatch:dispatch_require(Meta, Receiver, Right, Args, umergev(SL, SR), fun() ->
+        case S#elixir_scope.context of
+          Context when Receiver /= erlang, (Context == match) orelse (Context == guard) ->
+            compile_error(Meta, S#elixir_scope.file, "cannot invoke remote function ~ts.~ts/~B inside ~ts",
+              [elixir_errors:inspect(Receiver), Right, length(Args), Context]);
+          _ ->
+            Callback()
+        end
+      end);
+    _ ->
+      case S#elixir_scope.context of
+        Context when Context == match; Context == guard ->
+          compile_error(Meta, S#elixir_scope.file, "cannot invoke remote function ~ts/~B inside ~ts",
+            [Right, length(Args), Context]);
+        _ ->
+          Callback()
+      end
   end;
 
 %% Anonymous function calls
 
-translate_each({ { '.', _, [Expr] }, Meta, Args } = Original, S) ->
+translate_each({ { '.', _, [Expr] }, Meta, Args }, S) when is_list(Args) ->
   { TExpr, SE } = translate_each(Expr, S),
   case TExpr of
     { atom, _, Atom } ->
       syntax_error(Meta, S#elixir_scope.file, "invalid function call :~ts.()", [Atom]);
     _ ->
-      case elixir_partials:handle(Original, S) of
-        error ->
-          { TArgs, SA } = translate_args(Args, umergec(S, SE)),
-          { {call, ?line(Meta), TExpr, TArgs}, umergev(SE, SA) };
-        Else -> Else
-      end
+      { TArgs, SA } = translate_args(Args, umergec(S, SE)),
+      { {call, ?line(Meta), TExpr, TArgs}, umergev(SE, SA) }
   end;
 
 %% Invalid calls
 
-translate_each({ Invalid, Meta, _Args }, S) ->
+translate_each({ Invalid, Meta, Args }, S) when is_list(Meta) and is_list(Args) ->
   syntax_error(Meta, S#elixir_scope.file, "unexpected parenthesis after ~ts",
     ['Elixir.Macro':to_string(Invalid)]);
+
+translate_each({ _, _, _ } = Tuple, S) ->
+  syntax_error([{line,0}], S#elixir_scope.file, "expected a valid quoted expression, got: ~ts",
+    ['Elixir.Kernel':inspect(Tuple, [{raw,true}])]);
 
 %% Literals
 
@@ -472,6 +439,12 @@ translate_each(Literal, S) ->
   elixir_literal:translate(Literal, S).
 
 %% Helpers
+
+var_kind(Meta, Kind) ->
+  case lists:keyfind(counter, 1, Meta) of
+    { counter, Counter } -> Counter;
+    false -> Kind
+  end.
 
 %% Opts
 
@@ -546,7 +519,7 @@ translate_alias(Meta, IncludeByDefault, Old, TKV, S) ->
                "invalid :as for alias, nested alias ~s not allowed", [elixir_errors:inspect(New)])
   end,
 
-  { { atom, ?line(Meta), nil }, elixir_aliases:store(Meta, New, Old, S) }.
+  { { atom, ?line(Meta), nil }, elixir_aliases:store(Meta, New, Old, TKV, S) }.
 
 no_alias_opts(KV) when is_list(KV) ->
   case lists:keyfind(as, 1, KV) of
@@ -628,6 +601,7 @@ translate_apply(Meta, TLeft, TRight, Args, S, SL, SR) ->
       case TLeft of
         { atom, _, Receiver } ->
           Tuple = { element(3, TRight), length(Args) },
+          elixir_lexical:record_remote(Receiver, S#elixir_scope.lexical_tracker),
           elixir_tracker:record_remote(Tuple, Receiver, S#elixir_scope.module, S#elixir_scope.function);
         _ ->
           ok

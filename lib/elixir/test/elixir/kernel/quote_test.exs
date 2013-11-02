@@ -173,6 +173,33 @@ defmodule Kernel.QuoteTest do
   end
 end
 
+## DO NOT MOVE THIS LINE
+defmodule Kernel.QuoteTest.Errors do
+  defmacro defadd do
+    quote location: :keep do
+      def add(a, b), do: a + b
+    end
+  end
+end
+
+defmodule Kernel.QuoteTest.ErrorsTest do
+  use ExUnit.Case, async: true
+  import Kernel.QuoteTest.Errors
+
+  # Defines the add function
+  defadd
+
+  test :inside_function_error do
+    assert_raise ArithmeticError, fn ->
+      add(:a, :b)
+    end
+
+    mod  = Kernel.QuoteTest.ErrorsTest
+    file = String.to_char_list!(__FILE__)
+    assert [{ ^mod, :add, 2, [file: ^file, line: 180] }|_] = System.stacktrace
+  end
+end
+
 defmodule Kernel.QuoteTest.VarHygiene do
   defmacro no_interference do
     quote do: a = 1
@@ -209,6 +236,22 @@ defmodule Kernel.QuoteTest.VarHygieneTest do
     quote do: var!(a, __MODULE__)
   end
 
+  defmacrop nested(var, do: block) do
+    quote do
+      var = unquote(var)
+      unquote(block)
+      var
+    end
+  end
+
+  defmacrop hat do
+    quote do
+      var  = 1
+      ^var = 1
+      var
+    end
+  end
+
   test :no_interference do
     a = 10
     no_interference
@@ -218,12 +261,6 @@ defmodule Kernel.QuoteTest.VarHygieneTest do
   test :no_hygiene do
     no_hygiene
     assert a == 1
-  end
-
-  test :cross_module_no_interference do
-    cross_module_no_interference
-    no_interference
-    assert read_cross_module == 10
   end
 
   test :cross_module_interference do
@@ -240,6 +277,18 @@ defmodule Kernel.QuoteTest.VarHygieneTest do
   test :read_interference do
     a = 10
     read_interference
+  end
+
+  test :nested do
+    assert (nested 1 do
+      nested 2 do
+        :ok
+      end
+    end) == 1
+  end
+
+  test :hat do
+    assert hat == 1
   end
 end
 
@@ -278,13 +327,13 @@ defmodule Kernel.QuoteTest.AliasHygieneTest do
   end
 
   test :expand_aliases_with_macro_does_not_expand_source_alias do
-    alias HashDict, as: Dict
+    alias HashDict, as: Dict, warn: false
     require Kernel.QuoteTest.AliasHygiene
     assert Kernel.QuoteTest.AliasHygiene.dict == Elixir.Dict.Bar
   end
 
   test :expand_aliases_with_macro_has_higher_preference do
-    alias HashDict, as: SuperDict
+    alias HashDict, as: SuperDict, warn: false
     require Kernel.QuoteTest.AliasHygiene
     assert Kernel.QuoteTest.AliasHygiene.super_dict == Elixir.Dict.Bar
   end

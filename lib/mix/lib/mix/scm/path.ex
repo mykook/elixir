@@ -3,7 +3,7 @@ defmodule Mix.SCM.Path do
   @moduledoc false
 
   def format(opts) do
-    [path: opts[:path]]
+    opts[:path]
   end
 
   def format_lock(_lock) do
@@ -30,8 +30,8 @@ defmodule Mix.SCM.Path do
     File.dir?(opts[:dest])
   end
 
-  def matches_lock?(_opts) do
-    true
+  def lock_status(_opts) do
+    :ok
   end
 
   def equal?(opts1, opts2) do

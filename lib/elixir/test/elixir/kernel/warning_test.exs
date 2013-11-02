@@ -137,19 +137,34 @@ defmodule Kernel.WarningTest do
 
   test :unused_import do
     assert capture_err(fn ->
-      Code.eval_string """
-      defmodule Sample1 do
-        def hello, do: nil
-      end
-
-      defmodule Sample2 do
-        import Sample1
+      Code.compile_string """
+      defmodule Sample do
+        import :lists, only: [flatten: 1]
         def a, do: nil
       end
       """
-    end) =~ "unused import Sample1"
+    end) =~ "unused import :lists"
+
+    assert capture_err(fn ->
+      Code.compile_string """
+      import :lists, only: [flatten: 1]
+      """
+    end) =~ "unused import :lists"
   after
-    purge [Sample1, Sample2]
+    purge [Sample]
+  end
+
+  test :unused_alias do
+    assert capture_err(fn ->
+      Code.compile_string """
+      defmodule Sample do
+        alias :lists, as: List
+        def a, do: nil
+      end
+      """
+    end) =~ "unused alias List"
+  after
+    purge [Sample]
   end
 
   test :unused_guard do
@@ -180,22 +195,8 @@ defmodule Kernel.WarningTest do
       end
       """
     end) =~ "nofile:6: this clause cannot match because a previous clause at line 5 always matches"
-
-    assert capture_err(fn ->
-      Code.eval_string """
-      defmodule Sample3 do
-        def is_binary_cond_case do
-          v = "bc"
-          case(is_binary(v)) do
-            _ in [false, nil] -> :ok
-            _ -> :bin
-          end
-        end
-      end
-      """
-    end) =~ "nofile:5: this clause cannot match because a previous clause at line 6 always matches"
   after
-    purge [Sample1, Sample2, Sample3]
+    purge [Sample1, Sample2]
   end
 
   test :unused_docs do
@@ -206,7 +207,7 @@ defmodule Kernel.WarningTest do
         def hello
       end
       """
-    end) =~ "docs provided for nonexistent function or macro hello/0"
+    end) =~ "empty clause provided for nonexistent function or macro hello/0"
   after
     purge [Sample1]
   end

@@ -15,8 +15,6 @@ defprotocol Enumerable do
   element in the collection and cons'ing the element with the accumulated list.
   """
 
-  @only [List, Record, Function]
-
   @doc """
   This function performs the reducing operation on a given collection. It
   returns the accumulated value of applying the given function `fun` on every
@@ -40,6 +38,7 @@ defprotocol Enumerable do
 
   @doc """
   The function is used to check if a value exists within the collection.
+  Membership should be tested with the match (`===`) operator.
   """
   def member?(collection, value)
 
@@ -88,6 +87,10 @@ defmodule Enum do
 
   @doc """
   Checks if `value` exists within the `collection`.
+
+  Membership is tested with the match (`===`) operator although
+  enumerables like ranges may include floats inside the given
+  range.
 
   ## Examples
 
@@ -212,8 +215,6 @@ defmodule Enum do
   Finds the element at the given index (zero-based).
   Returns `default` if index is out of bounds.
 
-  Expects an ordered collection.
-
   ## Examples
 
       iex> Enum.at([2, 4, 6], 0)
@@ -283,7 +284,11 @@ defmodule Enum do
 
   @doc """
   Drops the first `count` items from `collection`.
-  Expects an ordered collection.
+
+  A negative value `count` can be given, which means
+  the collection is enumerated once to retrieve the
+  proper index and the remaining of the calculation
+  is done from the end.
 
   ## Examples
 
@@ -309,13 +314,11 @@ defmodule Enum do
   end
 
   def drop(collection, count) when count < 0 do
-    { list, count } = iterate_and_count(collection, count)
-    drop(list, count)
+    do_take_reverse(reverse(collection), abs(count), [])
   end
 
   @doc """
   Drops items at the beginning of `collection` while `fun` returns `true`.
-  Expects an ordered collection.
 
   ## Examples
 
@@ -386,7 +389,9 @@ defmodule Enum do
   Finds the element at the given index (zero-based).
   Returns `{ :ok, element }` if found, otherwise `:error`.
 
-  Expects an ordered collection.
+  A negative index can be passed, which means the collection is
+  iterated once and the index is counted from the end (i.e.
+  `-1` fetches the last element).
 
   ## Examples
 
@@ -418,8 +423,7 @@ defmodule Enum do
   end
 
   def fetch(collection, n) when n < 0 do
-    { list, count } = iterate_and_count_oob(collection, n)
-    if count >= 0, do: fetch(list, count), else: :error
+    fetch(reverse(collection), abs(n + 1))
   end
 
   @doc """
@@ -555,8 +559,6 @@ defmodule Enum do
   @doc """
   Similar to `find/3`, but returns the index (zero-based)
   of the element instead of the element itself.
-
-  Expects an ordered collection.
 
   ## Examples
 
@@ -959,8 +961,7 @@ defmodule Enum do
   end
 
   def split(collection, count) when count < 0 do
-    { list, count } = iterate_and_count(collection, count)
-    split(list, count)
+    do_split_reverse(reverse(collection), abs(count), [])
   end
 
   @doc """
@@ -988,8 +989,12 @@ defmodule Enum do
   end
 
   @doc """
-  Takes the first `count` items from the collection. Expects an ordered
-  collection.
+  Takes the first `count` items from the collection.
+
+  A negative value `count` can be passed, which means
+  the collection is enumerated once to retrieve the
+  proper index and the remaining of the calculation
+  is done from the end.
 
   ## Examples
 
@@ -1027,8 +1032,7 @@ defmodule Enum do
   end
 
   def take(collection, count) when count < 0 do
-    { list, count } = iterate_and_count(collection, count)
-    take(list, count)
+    do_drop(reverse(collection), abs(count)) |> :lists.reverse
   end
 
   @doc """
@@ -1058,7 +1062,6 @@ defmodule Enum do
 
   @doc """
   Takes the items at the beginning of `collection` while `fun` returns `true`.
-  Expects an ordered collection.
 
   ## Examples
 
@@ -1323,7 +1326,7 @@ defmodule Enum do
 
   """
   @spec chunks(t, non_neg_integer, non_neg_integer) :: [list]
-  @spec chunks(t, non_neg_integer, non_neg_integer, list) :: [list]
+  @spec chunks(t, non_neg_integer, non_neg_integer, list | nil) :: [list]
   def chunks(coll, n, step, pad // nil) when n > 0 and step > 0 do
     { acc, buffer, i } =
       Enumerable.reduce(coll, { [], [], 0 }, fn
@@ -1374,12 +1377,17 @@ defmodule Enum do
   @doc """
   Returns a subset list of the given collection. Dropping elements
   until element position `start`, then taking `count` elements.
-  Expects an ordered collection.
+
+  ## Examples
+
+      iex> Enum.slice(1..100, 5, 10)
+      [6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+
   """
-  @spec slice(t, integer, integer) :: list
+  @spec slice(t, integer, non_neg_integer) :: list
 
   def slice(coll, start, count) when start < 0 do
-    { list, new_start } = iterate_and_count_oob(coll, start)
+    { list, new_start } = iterate_and_count(coll, start)
     if new_start >= 0, do: slice(list, new_start, count)
   end
 
@@ -1411,6 +1419,41 @@ defmodule Enum do
     :enum_slice -> []
   end
 
+  @doc """
+  Returns a subset list of the given collection. Dropping elements
+  until element position `range.first`, then taking elements until element
+  position `range.last` (inclusive).
+
+  Positions are calculated by adding the number of items in the collection to
+  negative positions (so position -3 in a collection with count 5 becomes
+  position 2).
+
+  The first position (after adding count to negative positions) must be smaller
+  or equal to the last position.
+
+  ## Examples
+
+      iex> Enum.slice(1..100, 5..10)
+      [6, 7, 8, 9, 10, 11]
+
+  """
+  def slice(coll, first..last) when first >= 0 and last >= 0 do
+    # Simple case, which works on infinite collections
+    if last - first >= 0 do
+      slice(coll, first, last - first + 1)
+    end
+  end
+
+  def slice(coll, first..last) do
+    { list, count } = iterate_and_count(coll, 0)
+    corr_first = if first >= 0, do: first, else: first + count
+    corr_last = if last >= 0, do: last, else: last + count
+    length = corr_last - corr_first + 1
+    if corr_first >= 0 and length > 0 do
+      slice(list, corr_first, length)
+    end
+  end
+
   ## Helpers
 
   @compile { :inline, chunks_n: 5, chunks_step: 4, to_string: 2 }
@@ -1433,23 +1476,12 @@ defmodule Enum do
     { acc, buffer, i }
   end
 
-  defp iterate_and_count_oob(collection, count) do
-    { list, total_items } = do_iterate_and_count(collection)
-    { list, total_items - abs(count) }
+  defp iterate_and_count(collection, count) when is_list(collection) do
+    { collection, length(collection) - abs(count) }
   end
 
   defp iterate_and_count(collection, count) do
-    { list, total_items } = do_iterate_and_count(collection)
-    { list, Kernel.max(0, total_items - abs(count)) }
-  end
-
-  defp do_iterate_and_count(collection) when is_list(collection) do
-    { collection, length(collection) }
-  end
-
-  defp do_iterate_and_count(collection) do
-    reducer = fn(x, acc) -> { x, acc + 1 } end
-    map_reduce(collection, 0, reducer)
+    map_reduce(collection, -abs(count), fn(x, acc) -> { x, acc + 1 } end)
   end
 
   defp to_string(mapper, entry) do
@@ -1689,6 +1721,18 @@ defmodule Enum do
     { :lists.reverse(acc), [] }
   end
 
+  defp do_split_reverse([h|t], counter, acc) when counter > 0 do
+    do_split_reverse(t, counter - 1, [h|acc])
+  end
+
+  defp do_split_reverse(list, 0, acc) do
+    { :lists.reverse(list), acc }
+  end
+
+  defp do_split_reverse([], _, acc) do
+    { [], acc }
+  end
+
   ## split_while
 
   defp do_split_while([h|t], fun, acc) do
@@ -1715,6 +1759,18 @@ defmodule Enum do
 
   defp do_take([], _) do
     []
+  end
+
+  defp do_take_reverse([h|t], counter, acc) when counter > 0 do
+    do_take_reverse(t, counter - 1, [h|acc])
+  end
+
+  defp do_take_reverse(_list, 0, acc) do
+    acc
+  end
+
+  defp do_take_reverse([], _, acc) do
+    acc
   end
 
   ## take_while
@@ -1799,8 +1855,9 @@ defimpl Enumerable, for: Function do
   end
 
   def member?(function, value) do
-    function.(false, fn(entry, _) ->
-      if entry === value, do: throw(:function_member?), else: false
+    function.(false, fn
+      ^value, _ -> throw(:function_member?)
+      _, _ -> false
     end)
   catch
     :function_member? -> true

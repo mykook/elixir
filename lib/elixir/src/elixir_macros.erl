@@ -44,6 +44,7 @@ translate({ in, Meta, [Left, Right] }, #elixir_scope{extra_guards=nil} = S) ->
   { TExpr, TS };
 
 translate({ in, Meta, [Left, Right] }, #elixir_scope{extra_guards=Extra} = S) ->
+  elixir_errors:deprecation(Meta, S#elixir_scope.file, "in operator inside matches is deprecated, please move it to a guard"),
   { TVar, TExpr, TS } = translate_in(Meta, Left, Right, S),
   { TVar, TS#elixir_scope{extra_guards=[TExpr|Extra]} };
 
@@ -162,7 +163,7 @@ translate({defmodule, Meta, [Ref, KV]}, S) when is_list(KV) ->
       FullModule = expand_module(Ref, Module, S),
 
       RS = case elixir_aliases:nesting_alias(S#elixir_scope.module, FullModule) of
-        { New, Old } -> elixir_aliases:store(Meta, New, Old, S);
+        { New, Old } -> elixir_aliases:store(Meta, New, Old, [{warn,false}], S);
         false -> S
       end,
 
@@ -232,13 +233,13 @@ translate_in(Meta, Left, Right, S) ->
     { cons, _, _, _ } ->
       [H|T] = elixir_utils:cons_to_list(TRight),
       Expr = lists:foldr(fun(X, Acc) ->
-        { op, Line, 'orelse', { op, Line, '==', Var, X }, Acc }
-      end, { op, Line, '==', Var, H }, T),
+        { op, Line, 'orelse', { op, Line, '=:=', Var, X }, Acc }
+      end, { op, Line, '=:=', Var, H }, T),
       { Cache, Expr };
     { string, _, [H|T] } ->
       Expr = lists:foldl(fun(X, Acc) ->
-        { op, Line, 'orelse', { op, Line, '==', Var, { integer, Line, X } }, Acc }
-      end, { op, Line, '==', Var, { integer, Line, H } }, T),
+        { op, Line, 'orelse', { op, Line, '=:=', Var, { integer, Line, X } }, Acc }
+      end, { op, Line, '=:=', Var, { integer, Line, H } }, T),
       { Cache, Expr };
     { tuple, _, [{ atom, _, 'Elixir.Range' }, Start, End] } ->
       Expr = case { Start, End } of
@@ -281,8 +282,18 @@ decreasing_compare(Line, Var, Start, End) ->
     { op, Line, '=<', Var, Start },
     { op, Line, '>=', Var, End } }.
 
-rewrite_case_clauses([{do,Meta1,[{in,_,[{'_',_,_},[false,nil]]}],False},{do,Meta2,[{'_',_,_}],True}]) ->
-  [{do,Meta1,[false],False},{do,Meta2,[true],True}];
+%% TODO: Once we have elixir_exp, we can move this
+%% clause to Elixir code and out of case.
+rewrite_case_clauses([
+    {do,Meta1,[{'when',_,[{V,M,C},{in,_,[{V,M,C},[false,nil]]}]}],False},
+    {do,Meta2,[{'_',_,UC}],True}] = Clauses)
+    when is_atom(V), is_list(M), is_atom(C), is_atom(UC) ->
+  case lists:keyfind('cond', 1, M) of
+    { 'cond', true } ->
+      [{do,Meta1,[false],False},{do,Meta2,[true],True}];
+    _ ->
+      Clauses
+  end;
 
 rewrite_case_clauses(Clauses) ->
   Clauses.
@@ -297,7 +308,8 @@ expand_module({ '__aliases__', _, [H] }, _Module, S) ->
 
 %% defmodule Hello.World
 expand_module({ '__aliases__', _, _ } = Alias, Module, S) ->
-  case elixir_aliases:expand(Alias, S#elixir_scope.aliases, S#elixir_scope.macro_aliases) of
+  case elixir_aliases:expand(Alias, S#elixir_scope.aliases, S#elixir_scope.macro_aliases,
+                             S#elixir_scope.lexical_tracker) of
     Atom when is_atom(Atom) ->
       Module;
     Aliases when is_list(Aliases) ->

@@ -8,14 +8,26 @@ defmodule IEx.Mixfile do
   def application do
     [ env: [
         after_spawn: [],
-        inspect_opts: [limit: 50, raw: false, pretty: true],
         colors: [ enabled: true,
+
+                  # Used by default on evaluation cycle
+                  eval_interrupt: "yellow",
                   eval_result: "yellow",
-                  error: "red",
-                  info: "normal",
-                  directory: "blue",
-                  device: "green" ],
-        history_size: 20,
-        started: true ] ]
+                  eval_error: "red",
+                  eval_info: "normal",
+
+                  # Used by ls
+                  ls_directory: "blue",
+                  ls_device: "green",
+
+                  # Used by ansi docs
+                  doc_bold: "bright",
+                  doc_code: "cyan,bright",
+                  doc_headings: "yellow,bright",
+                  doc_inline_code: "cyan",
+                  doc_underline: "underline",
+                  doc_title: "reverse,yellow,bright" ],
+        inspect: [limit: 50, raw: false, pretty: true],
+        history_size: 20 ] ]
   end
 end

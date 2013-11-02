@@ -5,17 +5,14 @@ defmodule KernelTest do
 
   doctest Access.List
   doctest String.Chars.List
-  doctest Inspect.Atom
-  doctest Inspect.BitString
-  doctest Inspect.List
-  doctest Inspect.Number
-  doctest Inspect.Regex
-  doctest Inspect.Tuple
   doctest Bitwise
   doctest Code
   doctest Enum
   doctest Exception
+  doctest Float
   doctest IO.ANSI
+  doctest Inspect.Algebra
+  doctest Integer
   doctest Keyword
   doctest Kernel
   doctest Kernel.SpecialForms
@@ -24,9 +21,11 @@ defmodule KernelTest do
   doctest Module
   doctest OptionParser
   doctest Path
+  doctest Protocol.Consolidation
   doctest Regex
   doctest Set
   doctest Stream
   doctest String
-  doctest Inspect.Algebra
+  doctest Tuple
+  doctest Version
 end
